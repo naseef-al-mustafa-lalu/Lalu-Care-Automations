@@ -1,0 +1,162 @@
+{
+  "name": "Lalu Print - Test file server",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "print-test-file",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "t0001-0000-4000-8000-000000000000",
+      "name": "Test file link",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "notes": "GET /webhook/print-test-file?t=<token>&page=1&label=A . Returns a dummy one-page PDF. Use the production URL (not test-url) so the gateway can fetch it.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const t=$('Test file link').first().json.query?.t;\nconst secret='REPLACE_TEST_FILE_TOKEN';\nif(t!==secret) return [{json:{denied:true}}];\nconst page=String($('Test file link').first().json.query?.page||'1');\nconst label=String($('Test file link').first().json.query?.label||'TEST');\nfunction makePdf(lines){\n  const esc=s=>String(s).replace(/[\\\\()]/g,'\\\\$&');\n  let y=760, content='BT /F1 20 Tf 60 '+y+' Td ';\n  lines.forEach((l,i)=>{ content+=(i?'0 -30 Td ':'')+'('+esc(l)+') Tj '; });\n  content+='ET';\n  const objs=[\n    '<< /Type /Catalog /Pages 2 0 R >>',\n    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',\n    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',\n    '<< /Length '+Buffer.byteLength(content)+' >>\\nstream\\n'+content+'\\nendstream',\n    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];\n  let pdf='%PDF-1.4\\n'; const off=[];\n  objs.forEach((o,i)=>{ off.push(Buffer.byteLength(pdf)); pdf+=(i+1)+' 0 obj\\n'+o+'\\nendobj\\n'; });\n  const x=Buffer.byteLength(pdf);\n  pdf+='xref\\n0 '+(objs.length+1)+'\\n0000000000 65535 f \\n'+off.map(o=>String(o).padStart(10,'0')+' 00000 n \\n').join('')+'trailer\\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\\nstartxref\\n'+x+'\\n%%EOF\\n';\n  return Buffer.from(pdf,'latin1');\n}\nconst buf=makePdf(['LALU PRINT GATEWAY TEST','Dummy page '+page+' ('+label+')','Non-sensitive. Safe to bin.','Sent '+new Date().toISOString()]);\nconst bin=await this.helpers.prepareBinaryData(buf,'test-'+page+'.pdf','application/pdf');\nreturn [{json:{denied:false},binary:{data:bin}}];"
+      },
+      "id": "t0002-0000-4000-8000-000000000000",
+      "name": "Make dummy PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "Replace REPLACE_TEST_FILE_TOKEN with the same random value used in the runner Config.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "t0003-0000-4000-8000-000000000000",
+              "leftValue": "={{ $json.denied }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "t0004-0000-4000-8000-000000000000",
+      "name": "Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "inputDataFieldName": "data",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/pdf"
+              }
+            ]
+          }
+        }
+      },
+      "id": "t0005-0000-4000-8000-000000000000",
+      "name": "Send PDF",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Not found",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "t0006-0000-4000-8000-000000000000",
+      "name": "Not found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Test file link": {
+      "main": [
+        [
+          {
+            "node": "Make dummy PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make dummy PDF": {
+      "main": [
+        [
+          {
+            "node": "Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Send PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/London",
+    "saveDataSuccessExecution": "none"
+  },
+  "pinData": {},
+  "tags": []
+}

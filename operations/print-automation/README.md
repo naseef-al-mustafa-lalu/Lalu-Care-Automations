@@ -78,3 +78,11 @@ The gateway details (Cardiff_Print_API_Details) differ from the bridge this pack
 5. Bridge: accepted / rejected / timeout / duplicate submission_ref, lookup after restart, one paper run end to end.
 6. Staff actions: all three, with and without a note, while a job is active.
 7. Kill n8n mid-run; confirm the monitor ends in Needs attention and nothing prints twice.
+
+## Gateway test pack (run this first)
+Two extra workflows prove the Cardiff gateway connection before the real print step is rebuilt. Dummy one-page PDFs only.
+1. Import `Lalu_Print_Test_File_Server.json`, replace `REPLACE_TEST_FILE_TOKEN` (random string), activate it. It serves `GET /webhook/print-test-file`.
+2. Import `Lalu_Print_Gateway_Test.json`. Create a Header Auth credential (`X-Print-Agent-Token` = gateway token) and attach it to both HTTP nodes. In Config set `n8n_public_base` (URL the Cardiff laptop can reach) and the same token.
+3. Run with `send_print_job: false`: health check only. Read the output of "Health-only result" (what `/health` returns, and whether n8n can reach 10.28.1.140:8787).
+4. Tell Cardiff, then set `send_print_job: true`, `pages: 1`. If it prints: the gateway can fetch an n8n link (answers questions 1 and 2). Note the seconds taken and the response.
+5. Further tests (one at a time): `pages: 3` (print order), `sha256_mode: wrong` (is it checked?), a second run with the same jobId (duplicates), a bad link (failure detail).

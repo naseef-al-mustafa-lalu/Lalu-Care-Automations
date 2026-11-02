@@ -1,0 +1,249 @@
+{
+  "name": "Lalu Print - Gateway test",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "t0007-0000-4000-8000-000000000000",
+      "name": "Run test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"cfg\": {\n    \"gateway_base\": \"http://10.28.1.140:8787\",\n    \"printer_queue\": \"CRD-PRN-01-AUTO\",\n    \"n8n_public_base\": \"REPLACE_N8N_PUBLIC_BASE\",\n    \"test_file_token\": \"REPLACE_TEST_FILE_TOKEN\",\n    \"send_print_job\": false,\n    \"pages\": 1,\n    \"sha256_mode\": \"empty\"\n  }\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "t0008-0000-4000-8000-000000000000",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "send_print_job=false: health check only (safe). Set true for a real test page. pages: 1 to 3 (use 3 to test order). sha256_mode: empty | wrong.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.cfg.gateway_base + '/health' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "t0009-0000-4000-8000-000000000000",
+      "name": "Gateway health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Header Auth credential: name X-Print-Agent-Token, value = the gateway token.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const c=$('Config').first().json.cfg;\nconst health=$input.first().json;\nconst hc=Number(health.statusCode||0);\nconst out={health_status_code:hc,health_body:health.body||null,health_error:health.error?.message||null};\nif(hc!==200||!c.send_print_job) return [{json:{...out,print_skipped:true,reason:hc!==200?'health check failed':'send_print_job is false (health-only run)'}}];\nconst batchId='BATCH-N8N-TEST-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14);\nconst jobs=[]; for(let i=1;i<=Number(c.pages);i++){\n  jobs.push({jobId:'PRT-N8N-TEST-'+batchId.slice(-14)+'-'+i,documentUrl:c.n8n_public_base.replace(/\\/$/,'')+'/webhook/print-test-file?t='+encodeURIComponent(c.test_file_token)+'&page='+i+'&label=ORDER-'+i,sha256:c.sha256_mode==='wrong'?'0'.repeat(64):'',printerQueue:c.printer_queue,copies:1,paperSize:'A4',colour:false,duplex:true});\n}\nreturn [{json:{...out,print_skipped:false,body:{requestType:jobs.length>1?'batch':'single',batchId,submittedBy:'n8n-test',jobs},started_ms:Date.now()}}];"
+      },
+      "id": "t0010-0000-4000-8000-000000000000",
+      "name": "Build test job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "t0011-0000-4000-8000-000000000000",
+              "leftValue": "={{ $json.print_skipped }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "t0012-0000-4000-8000-000000000000",
+      "name": "Send test page?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.cfg.gateway_base + '/print-jobs' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "t0013-0000-4000-8000-000000000000",
+      "name": "Submit to gateway",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -80
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "NO retries on purpose: a retry could print twice.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.first().json; const prev=$('Build test job').first().json;\nconst ms=Date.now()-Number(prev.started_ms||Date.now());\nreturn [{json:{summary:{http_status:Number(r.statusCode||0),seconds_taken:Math.round(ms/100)/10,gateway_response:r.body||null,error:r.error?.message||null,batchId:prev.body?.batchId,jobs_sent:prev.body?.jobs?.length},what_to_note:'Check: did it print? order of pages? time taken? failure detail? (see README, gateway test)'}}];"
+      },
+      "id": "t0014-0000-4000-8000-000000000000",
+      "name": "Summarise result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        -80
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "t0015-0000-4000-8000-000000000000",
+      "name": "Health-only result",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        100
+      ],
+      "notes": "Read this output: health_status_code and health_body show what /health returns.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Run test": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Gateway health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gateway health": {
+      "main": [
+        [
+          {
+            "node": "Build test job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build test job": {
+      "main": [
+        [
+          {
+            "node": "Send test page?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send test page?": {
+      "main": [
+        [
+          {
+            "node": "Submit to gateway",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Health-only result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit to gateway": {
+      "main": [
+        [
+          {
+            "node": "Summarise result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/London",
+    "saveDataSuccessExecution": "none"
+  },
+  "pinData": {},
+  "tags": []
+}
