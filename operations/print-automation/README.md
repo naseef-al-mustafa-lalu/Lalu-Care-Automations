@@ -34,6 +34,24 @@ The gateway details (Cardiff_Print_API_Details) differ from the bridge this pack
 3. The result is synchronous (`jobsCompleted`/`jobsFailed` counts, no per-job lookup, no job status endpoint). "Printed" can only mean "accepted by the Ricoh queue"; jams, paper-out and toner cannot be detected, only spooler state.
 4. Auth: header `X-Print-Agent-Token` held as an n8n Header Auth credential, never in the JSON. The token was shared in a document and chat; rotate it before production.
 
+## Gateway test results (2 Nov 2026, Cardiff gateway 10.0.60.33:8787)
+| Test | Result |
+|---|---|
+| `/health` from n8n | 200 in ~0.2 s: `status`, `spoolerStatus`, `printerQueue`, `printerStatus: Normal`. Earlier address 10.28.1.140 timed out (n8n is on Google Cloud, no route). |
+| No / wrong token (GET /health, POST /print-jobs) | 401 `UNAUTHORISED`, nothing printed |
+| n8n-hosted `documentUrl` (token-protected link) | Works: the Cardiff laptop fetched the dummy PDF from automation.lalu.co.uk and printed it |
+| 1 page | `batchStatus: completed`, per-job `results[]`; took 127 s |
+| Bad link (404) | Fails in ~0.5 s: HTTP **200** with `batchStatus: failed`, `jobsFailed: 1`, `errorCode: PRINT_JOB_FAILED`, `errorMessage: ... (404) Not Found`. Nothing printed |
+| More than 25 jobs | HTTP 500 `API_ERROR` "Too many jobs in batch. Requested: 31. Max: 25". Nothing printed |
+| 3 pages | n8n timed out at 300 s with no response, but **all 3 pages printed, in the correct order** (confirmed by Cardiff) |
+
+Implications for the print step:
+- **Timeout is not failure.** A call can time out and still print. Treat a timeout as "unknown / sent", never resend automatically; confirm with the gateway or staff.
+- **Failures return HTTP 200.** Read `batchStatus`, `jobsFailed` and each `results[].status` / `errorCode`, not only the HTTP code. 401/500 carry `accepted: false`.
+- **Order is preserved** within a batch (manifest first, then reports).
+- **Slow, synchronous prints** (~2 min per page in the test, cause not yet known: shared queue vs gateway waiting for the spooler). Keep batches small, set the HTTP timeout well above 5 minutes, and ask the gateway developer for an asynchronous mode or a job-status lookup.
+- **Still untested:** wrong `sha256`, duplicate `jobId`, jam / paper-out / toner effect on `printerStatus`, behaviour while the office queue is busy.
+
 ## Limits (Config node)
 - `max_reports_per_pack`: reports per destination batch (default 50). Bigger destinations split into several packs.
 - `max_reports_per_day`: total reports per day (default 200). Counted against deals with a Print submitted at date today (UK time), oldest queued first; the rest stay Queued for tomorrow.
