@@ -184,6 +184,8 @@ const throws = async (p, re) => { try { await p; } catch (e) { ok(re.test(e.mess
   ok((await pf({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running' } }))[0].json.printer_state === 'ready', 'queue omitted ok');
   for (const b of [{ status: 'offline' }, { status: 'online', spoolerStatus: 'Stopped' }, { status: 'online' }, { status: 'weird' }]) await throws(pf({ statusCode: 200, body: b }), /PRINTER_NOT_READY/);
   await throws(pf({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerQueue: 'OTHER' } }), /expected/);
+  ok((await pf({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'Normal' } }))[0].json.printer_state === 'ready', 'printerStatus Normal ok');
+  await throws(pf({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'PaperJam' } }), /printer status/);
   await throws(pf({ error: { message: 'ECONNREFUSED' } }), /unreachable/);
   await throws(pf({ statusCode: 500, body: {} }), /HTTP 500/);
   ok((await run('Daily allowance', { input: [mkitem({ total: 50 })] }))[0].json.allowance === 150, 'allowance 150');

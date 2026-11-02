@@ -50,7 +50,7 @@ sc['Allowed?'] = { main: [[{ node: 'Send PDF', type: 'main', index: 0 }], [{ nod
 
 // ===== 2. Test runner =====
 const cfg = {
-  gateway_base: 'http://10.28.1.140:8787',
+  gateway_base: 'http://10.0.60.33:8787',
   printer_queue: 'CRD-PRN-01-AUTO',
   n8n_public_base: 'REPLACE_N8N_PUBLIC_BASE',
   test_file_token: 'REPLACE_TEST_FILE_TOKEN',

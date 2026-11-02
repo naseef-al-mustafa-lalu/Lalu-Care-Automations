@@ -186,6 +186,7 @@ if(sc!==200) stop('the print bridge is unreachable or returned HTTP '+(sc||'no r
 const sp=String(b.spoolerStatus||''); const q=String(b.printerQueue||'');
 const state=(String(b.status||'')==='online'&&sp==='Running')?'ready':(String(b.status||'')==='online'?'spooler_'+sp.toLowerCase():String(b.status||'unknown'));
 if(state!=='ready') stop('print gateway reports status "'+(b.status||'unknown')+'", spooler "'+(sp||'unknown')+'"');
+const ps=String(b.printerStatus||''); if(ps&&ps.toLowerCase()!=='normal') stop('printer status is "'+ps+'"');
 if(c.printer_queue&&q&&q!==c.printer_queue) stop('gateway queue is "'+q+'", expected "'+c.printer_queue+'"');
 const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
 const offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;

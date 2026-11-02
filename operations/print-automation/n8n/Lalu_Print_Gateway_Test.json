@@ -15,7 +15,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "{\n  \"cfg\": {\n    \"gateway_base\": \"http://10.28.1.140:8787\",\n    \"printer_queue\": \"CRD-PRN-01-AUTO\",\n    \"n8n_public_base\": \"REPLACE_N8N_PUBLIC_BASE\",\n    \"test_file_token\": \"REPLACE_TEST_FILE_TOKEN\",\n    \"send_print_job\": false,\n    \"pages\": 1,\n    \"sha256_mode\": \"empty\"\n  }\n}",
+        "jsonOutput": "{\n  \"cfg\": {\n    \"gateway_base\": \"http://10.0.60.33:8787\",\n    \"printer_queue\": \"CRD-PRN-01-AUTO\",\n    \"n8n_public_base\": \"REPLACE_N8N_PUBLIC_BASE\",\n    \"test_file_token\": \"REPLACE_TEST_FILE_TOKEN\",\n    \"send_print_job\": false,\n    \"pages\": 1,\n    \"sha256_mode\": \"empty\"\n  }\n}",
         "includeOtherFields": true,
         "options": {}
       },

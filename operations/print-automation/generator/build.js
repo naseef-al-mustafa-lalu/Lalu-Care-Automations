@@ -27,7 +27,7 @@ const cfg = {
   third_party_label: 'Third party',
   printer_submit_url: 'https://REPLACE_PRINT_BRIDGE/submit',
   printer_lookup_url: 'https://REPLACE_PRINT_BRIDGE/job',
-  printer_status_url: 'http://10.28.1.140:8787/health',
+  printer_status_url: 'http://10.0.60.33:8787/health',
   printer_queue: 'CRD-PRN-01-AUTO',
   max_reports_per_pack: 50,
   max_reports_per_day: 200,

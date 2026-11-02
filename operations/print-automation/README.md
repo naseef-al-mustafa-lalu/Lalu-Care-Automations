@@ -27,9 +27,10 @@ Before anything is claimed the run calls the bridge `GET /status`. Nothing is pr
 After a stop, fix the printer and start a manual run (there is no automatic second attempt today). During a job: submit accepted → Sent to printer; rejected or unknown → run stops, deals Needs attention; later the monitor reads `completed`, `failed`, `error` (with `reason`, e.g. paper jam) or `not_found`.
 
 ## Cardiff print gateway: what the real API changes (read before building)
-The gateway details (Cardiff_Print_API_Details) differ from the bridge this pack assumed. **Done:** pre-flight now calls `GET http://10.28.1.140:8787/health` (needs `status: online` and `spoolerStatus: Running`, queue `CRD-PRN-01-AUTO`); stage IDs are set. **Not yet matched, needs a decision:**
+The gateway details (Cardiff_Print_API_Details) differ from the bridge this pack assumed. **Done:** pre-flight now calls `GET http://10.0.60.33:8787/health` (needs `status: online`, `spoolerStatus: Running`, `printerStatus: Normal` when present, queue `CRD-PRN-01-AUTO`); stage IDs are set. **Not yet matched, needs a decision:**
 1. `POST /print-jobs` takes JSON with a `documentUrl` the gateway downloads itself; file bytes are not accepted. The workflow still posts a merged PDF as multipart, so it will not print until we have a short-lived secure URL host for the PDFs.
 2. Limits: 50 MB per file, 25 jobs per batch, PDF only. One merged pack of up to 50 reports will not fit; the realistic shape is one job per report plus the manifest as job 1 (max 24 reports per request), and EMR+ reports over 50 MB go to Needs attention.
+**Confirmed 2 Nov from n8n:** `/health` at the address above returns 200 with `printerStatus: Normal`, so the gateway does report printer state. Which faults change it (jam, paper-out, toner) is still untested.
 3. The result is synchronous (`jobsCompleted`/`jobsFailed` counts, no per-job lookup, no job status endpoint). "Printed" can only mean "accepted by the Ricoh queue"; jams, paper-out and toner cannot be detected, only spooler state.
 4. Auth: header `X-Print-Agent-Token` held as an n8n Header Auth credential, never in the JSON. The token was shared in a document and chat; rotate it before production.
 
@@ -83,6 +84,6 @@ The gateway details (Cardiff_Print_API_Details) differ from the bridge this pack
 Two extra workflows prove the Cardiff gateway connection before the real print step is rebuilt. Dummy one-page PDFs only.
 1. Import `Lalu_Print_Test_File_Server.json`, replace `REPLACE_TEST_FILE_TOKEN` (random string), activate it. It serves `GET /webhook/print-test-file`.
 2. Import `Lalu_Print_Gateway_Test.json`. Create a Header Auth credential (`X-Print-Agent-Token` = gateway token) and attach it to both HTTP nodes. In Config set `n8n_public_base` (URL the Cardiff laptop can reach) and the same token.
-3. Run with `send_print_job: false`: health check only. Read the output of "Health-only result" (what `/health` returns, and whether n8n can reach 10.28.1.140:8787).
+3. Run with `send_print_job: false`: health check only. Read the output of "Health-only result" (what `/health` returns, and whether n8n can reach 10.0.60.33:8787).
 4. Tell Cardiff, then set `send_print_job: true`, `pages: 1`. If it prints: the gateway can fetch an n8n link (answers questions 1 and 2). Note the seconds taken and the response.
 5. Further tests (one at a time): `pages: 3` (print order), `sha256_mode: wrong` (is it checked?), a second run with the same jobId (duplicates), a bad link (failure detail).
