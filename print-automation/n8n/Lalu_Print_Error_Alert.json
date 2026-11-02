@@ -1,0 +1,56 @@
+{
+  "name": "Lalu Print - Error alert",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "7e102941-990f-49be-9c30-d6471dfc4ef3",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_FROM_EMAIL",
+        "toEmail": "REPLACE_OPS_EMAIL",
+        "subject": "=Print automation FAILED: {{ $json.workflow.name }}",
+        "emailFormat": "text",
+        "text": "={{ 'Workflow: ' + $json.workflow.name + '\\nFailed node: ' + ($json.execution.lastNodeExecuted || '') + '\\nError: ' + ($json.execution.error && $json.execution.error.message) + '\\nExecution: ' + ($json.execution.url || '') + '\\n\\nDo not re-run blindly: check the printer queue and deals in Preparing / Needs attention first.' }}",
+        "options": {}
+      },
+      "id": "1b7b5fa3-ce95-42d2-a3a6-51bee652956f",
+      "name": "Email Ops and Engineering",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Bind an SMTP credential. Set REPLACE_ values. No claimant data is included.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Email Ops and Engineering",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/London"
+  },
+  "pinData": {},
+  "tags": []
+}
