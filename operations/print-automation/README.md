@@ -36,7 +36,9 @@ One per call, printed first: batch ID, print call and part (for example part 2 o
 | Timeout / no answer / 5xx | Needs attention, "result unknown" | stops, alert. **Never resent automatically** |
 | Every report refused by EMR+ (403) | Needs attention | stops, alert |
 
-EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching case, 409 not completed / not available, 403 key or IP refused, 410 link expired, 422 bad link, 413 over 50 MB, 503 busy / unreachable / not configured, 502 other.
+EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching case, 409 not completed / not available / too large, 403 key or IP refused, 410 link expired, 422 bad link, 413 over 50 MB, 503 rate limited / unreachable / not configured, 502 other.
+
+**EMR+ retries (agreed with Emily, 4 Nov):** 429 (throttled): wait 60 s and retry, up to 2 times (`emr_retry_429_*`). 500 (internal error): wait 30 s and retry once (`emr_retry_500_*`); if it persists the deal shows the reason and Emily checks Sentry. 403 (key or IP): not retried, tell Naseef. 400, 404, 409: not retried, ops review manually. The retry happens inside the report-link flow while the gateway waits, so the gateway's download timeout is still to be tested.
 
 ## Credentials (nothing secret is in this repo)
 | What | Where it lives |

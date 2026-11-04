@@ -127,7 +127,7 @@ CODE.print_outcome = String.raw`const c=$('Config').first().json.cfg; const F=c.
 const meta=$('Build print request').first().json.meta;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=(r.body&&typeof r.body==='object')?r.body:{};
 const nowISO=new Date().toISOString();
-const why={400:'the case reference was not valid',404:'EMR+ has no matching case (not found or deal ID mismatch)',409:'the report is not completed or not available in EMR+',403:'EMR+ refused access (API key or IP address)',410:'the download link expired before the printer used it',413:'the report is over the printer limit of 50 MB',422:'the download link was not valid',502:'EMR+ returned an error or something that is not a PDF',503:'EMR+ was busy, unreachable or not configured'};
+const why={400:'the case reference was not valid',404:'EMR+ has no matching case (not found or deal ID mismatch): ops to check the case',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the printer limit of 50 MB',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
 const reason=x=>{ const m=String((x&&x.errorMessage)||'').match(/\((\d{3})\)/); if(m&&why[m[1]]) return why[m[1]]+' (HTTP '+m[1]+')'; return String((x&&(x.errorMessage||x.errorCode))||'the printer reported a failure').slice(0,160); };
 let kind='results';
 if(!sc) kind='unknown';
@@ -283,17 +283,21 @@ const c=txt('F2',20,60,780,'DUMMY REPORT (TEST MODE)')+txt('F1',14,60,740,'Case 
 const bin=await this.helpers.prepareBinaryData(buildPdf([c]),'dummy-'+String(q.m||'')+'.pdf','application/pdf');
 return [{json:{ok:true},binary:{data:bin}}];`.replace('${PDF_LIB}', PDF_LIB);
 
-CODE.check_report = String.raw`const it=$input.first(); const r=it.json||{}; const sc=Number(r.statusCode||0);
-const bad=(status,msg)=>[{json:{ok:false,status,msg}}];
+CODE.check_report = String.raw`const c=$('Config').first().json.cfg; const it=$input.first(); const r=it.json||{}; const sc=Number(r.statusCode||0);
+const bad=(status,msg)=>[{json:{ok:false,retry:false,status,msg}}];
+const again=(wait,status,msg)=>[{json:{ok:false,retry:true,wait,status,msg}}];
 if(!sc) return bad(503,'EMR+ unreachable or not configured');
 if(sc!==200){
-  const m={400:[400,'invalid case reference'],401:[403,'EMR+ refused access'],403:[403,'EMR+ refused access'],404:[404,'case not found or deal id mismatch'],409:[409,'report not completed, not available or too large'],429:[503,'EMR+ busy']};
+  const n=$runIndex; // 0 = first answer, 1 = after the first retry, ...
+  if(sc===429){ if(n<Number(c.emr_retry_429_max||0)) return again(Number(c.emr_retry_429_wait_seconds||60),503,'EMR+ rate limited, retrying'); return bad(503,'EMR+ rate limited (429) after retries'); }
+  if(sc===500){ if(n<Number(c.emr_retry_500_max||0)) return again(Number(c.emr_retry_500_wait_seconds||30),502,'EMR+ internal error, retrying'); return bad(502,'EMR+ internal error (500) after retry'); }
+  const m={400:[400,'invalid case reference or missing deal id'],401:[403,'EMR+ refused access'],403:[403,'EMR+ refused access'],404:[404,'case not found or deal id mismatch'],409:[409,'report not completed, not available or too large']};
   const x=m[sc]||(sc>=500?[502,'EMR+ error']:[502,'unexpected EMR+ answer']); return bad(x[0],x[1]);
 }
 if(!it.binary||!it.binary.data) return bad(502,'EMR+ sent no file');
 const buf=await this.helpers.getBinaryDataBuffer(0,'data');
 if(buf.length<6||buf.subarray(0,5).toString()!=='%PDF-') return bad(502,'EMR+ did not send a PDF');
 if(buf.length>50*1024*1024) return bad(413,'report over the printer limit of 50 MB');
-return [{json:{ok:true},binary:{data:it.binary.data}}];`;
+return [{json:{ok:true,retry:false},binary:{data:it.binary.data}}];`;
 
 module.exports = CODE;

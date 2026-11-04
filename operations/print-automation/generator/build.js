@@ -10,6 +10,10 @@ const cfg = {
   printer_queue: 'CRD-PRN-01-AUTO',
   emr_mode: 'live',
   emr_base: 'https://REPLACE_EMR_HOST',
+  emr_retry_429_wait_seconds: 60,
+  emr_retry_429_max: 2,
+  emr_retry_500_wait_seconds: 30,
+  emr_retry_500_max: 1,
   link_secret: 'REPLACE_LINK_SECRET',
   link_valid_minutes: 30,
   reports_per_call: 24,
@@ -132,7 +136,9 @@ code('Build manifest PDF', CODE.build_manifest, [2420, 1160]);
 ifNode('Dummy mode?', `={{ ${C}.emr_mode === 'dummy' }}`, true, [2420, 1360]);
 code('Dummy report PDF', CODE.dummy_report, [2640, 1280]);
 add('Fetch report from EMR+', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $('Config').first().json.query.m + '/completed_report/?hubspot_deal_id=' + $('Config').first().json.query.i }}", ...HDR, options: { timeout: 120000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'file', outputPropertyName: 'data' } } } }, [2640, 1440], { onError: 'continueRegularOutput', notes: 'PLACEHOLDER until EMR+ is ready: set emr_base in Config and bind a Header Auth credential (Name: Authorization, Value: Api-Key <key>). Streams the PDF back to the gateway; nothing is stored.', notesInFlow: true });
-code('Check report', CODE.check_report, [2860, 1440]);
+code('Check report', CODE.check_report, [2860, 1440], 'EMR+ 429: wait and retry (emr_retry_429_*). EMR+ 500: retry once (emr_retry_500_*). 403, 400, 404, 409: no retry, answered straight back so the deal shows the reason.');
+ifNode('Retry EMR+?', '={{ $json.retry }}', true, [3080, 1560]);
+add('Wait before retry', 'n8n-nodes-base.wait', 1.1, { resume: 'timeInterval', amount: '={{ $json.wait }}', unit: 'seconds' }, [3080, 1700], { notes: 'Waits, then fetches the same report again. Keep the wait under 65 s so n8n holds the link request open.', notesInFlow: true });
 ifNode('Report OK?', '={{ $json.ok }}', true, [3080, 1440]);
 add('Send PDF', 'n8n-nodes-base.respondToWebhook', 1.1, { respondWith: 'binary', inputDataFieldName: 'data', options: { responseCode: 200, responseHeaders: { entries: [{ name: 'Content-Type', value: 'application/pdf' }] } } }, [3300, 1260]);
 add('Send error', 'n8n-nodes-base.respondToWebhook', 1.1, { respondWith: 'text', responseBody: '={{ $json.msg }}', options: { responseCode: '={{ $json.status }}' } }, [3300, 1560]);
@@ -145,7 +151,9 @@ link('Manifest link?', 'Build manifest PDF', 0); link('Manifest link?', 'Dummy m
 link('Build manifest PDF', 'Send PDF');
 link('Dummy mode?', 'Dummy report PDF', 0); link('Dummy mode?', 'Fetch report from EMR+', 1);
 link('Dummy report PDF', 'Send PDF');
-chain('Fetch report from EMR+', 'Check report', 'Report OK?');
+chain('Fetch report from EMR+', 'Check report', 'Retry EMR+?');
+link('Retry EMR+?', 'Wait before retry', 0); link('Retry EMR+?', 'Report OK?', 1);
+link('Wait before retry', 'Fetch report from EMR+');
 link('Report OK?', 'Send PDF', 0); link('Report OK?', 'Send error', 1);
 
 const main = {

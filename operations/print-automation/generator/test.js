@@ -35,7 +35,7 @@ real.link_secret = 'test-secret-for-hmac-1234567890abcdef';
 real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.to_be_sent_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest';
 const mkitem = (json, binary) => ({ json, binary });
 const b64 = s => Buffer.from(s).toString('base64');
-async function run(name, { input = [], nodes = {}, cfgOverride } = {}) {
+async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0 } = {}) {
   const c = cfgOverride || real;
   const env = { ...nodes, Config: [mkitem({ cfg: c, flow: 'x', body: nodes.__body, query: nodes.__query })] };
   const $ = n => { const a = env[n]; if (!a) throw new Error('Node not executed: ' + n); return { first: () => a[0], all: () => a, itemMatching: i => a[i], item: a[0] }; };
@@ -43,8 +43,8 @@ async function run(name, { input = [], nodes = {}, cfgOverride } = {}) {
   const ctx = { helpers: {
     async getBinaryDataBuffer(i, key) { return Buffer.from(input[i].binary[key].data, 'base64'); },
     async prepareBinaryData(buf, fileName, mimeType) { return { data: buf.toString('base64'), fileName, mimeType }; } } };
-  const fn = new AsyncFunction('$', '$input', '$json', '$execution', codeOf(name));
-  return await fn.call(ctx, $, $input, input[0] && input[0].json, { id: '1' });
+  const fn = new AsyncFunction('$', '$input', '$json', '$execution', '$runIndex', codeOf(name));
+  return await fn.call(ctx, $, $input, input[0] && input[0].json, { id: '1' }, runIndex);
 }
 const throws = async (p, re) => { try { await p; } catch (e) { ok(re.test(e.message), 'wrong error ' + e.message); return; } assert.fail('expected throw ' + re); };
 const hmac = (payload, secret = real.link_secret) => crypto.createHmac('sha256', secret).update(payload).digest('hex');
@@ -157,7 +157,14 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const pdfBin = { data: b64('%PDF-1.4 fake'), mimeType: 'application/pdf' };
   const cr = (j, bin) => run('Check report', { input: [mkitem(j, bin)] });
   ok((await cr({ statusCode: 200 }, { data: pdfBin }))[0].json.ok === true, 'EMR+ 200 PDF passes through');
-  for (const [sc, st] of [[404, 404], [409, 409], [403, 403], [401, 403], [400, 400], [429, 503], [500, 502], [418, 502]]) ok((await cr({ statusCode: sc }, { data: { data: b64('{}') } }))[0].json.status === st, 'EMR+ ' + sc + ' -> ' + st);
+  for (const [sc, st] of [[404, 404], [409, 409], [403, 403], [401, 403], [400, 400], [418, 502]]) ok((await cr({ statusCode: sc }, { data: { data: b64('{}') } }))[0].json.status === st, 'EMR+ ' + sc + ' -> ' + st);
+  const crr = (sc, runIndex) => run('Check report', { input: [mkitem({ statusCode: sc }, { data: { data: b64('{}') } })], runIndex });
+  let rr = (await crr(429, 0))[0].json; ok(rr.retry === true && rr.wait === 60, '429 first answer -> wait 60 s and retry');
+  rr = (await crr(429, 1))[0].json; ok(rr.retry === true, '429 second answer -> retry again');
+  rr = (await crr(429, 2))[0].json; ok(rr.retry === false && rr.status === 503 && /429/.test(rr.msg), '429 after 2 retries -> 503');
+  rr = (await crr(500, 0))[0].json; ok(rr.retry === true && rr.wait === 30, '500 first answer -> retry once');
+  rr = (await crr(500, 1))[0].json; ok(rr.retry === false && rr.status === 502, '500 after retry -> 502');
+  for (const sc of [400, 403, 404, 409]) ok((await crr(sc, 0))[0].json.retry === false, sc + ' is never retried');
   ok((await cr({ error: { message: 'getaddrinfo ENOTFOUND REPLACE_EMR_HOST' } }))[0].json.status === 503, 'placeholder host / no answer -> 503');
   ok((await cr({ statusCode: 200 }, { data: { data: b64('<html>') } }))[0].json.status === 502, 'non-PDF -> 502');
   ok((await cr({ statusCode: 200 }))[0].json.status === 502, 'no file -> 502');
@@ -172,7 +179,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(o.handoff[0].properties.print_status === 'printed' && o.handoff[0].properties.dispatch_hold_printing === 'false' && o.handoff[0].properties.print_completed_at && o.handoff[0].properties.print_submitted_at === meta.started_iso && o.handoff[0].properties.print_issue === '', 'printed props');
   o = (await oc({ statusCode: 200, body: { accepted: true, batchStatus: 'completed', jobsFailed: 0 } }))[0].json; ok(!o.unsafe && o.handoff.length === meta.cases.length, 'batch-level success without per-job results');
   o = (await oc({ statusCode: 200, body: { batchStatus: 'failed', jobsFailed: allIds.length, results: allIds.map(id => ({ jobId: id, status: 'failed', errorCode: 'PRINT_JOB_FAILED', errorMessage: '(409) Conflict' })) } }))[0].json;
-  ok(!o.unsafe && o.jobs_ok === 0 && o.updates.length === meta.cases.length && /not completed or not available in EMR\+/.test(o.updates[0].properties.print_issue) && o.updates[0].properties.print_status === 'needs_attention', '409 -> readable reason');
+  ok(!o.unsafe && o.jobs_ok === 0 && o.updates.length === meta.cases.length && /not completed, not available or too large in EMR\+/.test(o.updates[0].properties.print_issue) && o.updates[0].properties.print_status === 'needs_attention', '409 -> readable reason');
   const partial = [[meta.manifest_job_id, true], [meta.cases[0].job_id, false, 'x (404) Not Found'], ...meta.cases.slice(1).map(k => [k.job_id, true])];
   o = (await oc({ statusCode: 200, body: { batchStatus: 'partial', jobsFailed: 1, results: res(...partial) } }))[0].json;
   ok(!o.unsafe && o.updates.length === 1 && o.updates[0].id === meta.cases[0].deal_id && /no matching case/.test(o.updates[0].properties.print_issue) && o.handoff.length === meta.cases.length - 1, 'one failed, rest printed');

@@ -120,8 +120,8 @@ After successful printing with no open issue:
 | Printer not ready at 08:30 (health check fails) | Stays Queued | Nothing is sent and the team is alerted. The cases are picked up at the next run. |
 | Gateway rejects the call (wrong or missing token, more than 25 jobs, file over 50 MB, not a PDF) | Needs attention, reason in Print issue | Nothing prints. Fix the cause, then use Print / reprint. |
 | A report cannot be fetched from EMR+ (400, 404 or 409: case or deal ID mismatch, not completed, report not available, report too large) | Needs attention, reason in Print issue | The gateway reports that job as failed. The manifest already lists the case, so staff are told which report is missing. Whether later jobs still print is to be confirmed in the pilot. Reprint once fixed. |
-| EMR+ rejects the key or IP address (403) | Needs attention on the affected cases | The run stops and the team is alerted. Fix the key or the IP allow-list, then reprint. |
-| EMR+ rate limit or server error (429, 500) | Needs attention if it continues | A limited number of retries, then the job fails as above. |
+| EMR+ rejects the key or IP address (403) | Needs attention on the affected cases | The run stops and the team is alerted. Fix the key or the IP allow-list, then reprint. Tell Naseef: this is a credentials issue. |
+| EMR+ rate limit or server error (429, 500) | Needs attention if it continues | 429: n8n waits 60 seconds and retries up to twice. 500: n8n waits 30 seconds and retries once. If it still fails the job fails as above: for 429 try again later, for 500 ask Emily to check Sentry. |
 | Link expired, already used, or the gateway cannot reach n8n | Needs attention, reason in Print issue | The job fails. A reprint creates new links. |
 | Call times out | Needs attention, result unknown | Never resent automatically. Staff check the printer output and queue, then Resolve problem or Print / reprint. |
 | Manifest cannot be built | Needs attention | That destination is not sent. Other destinations continue. |
