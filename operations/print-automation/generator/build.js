@@ -53,7 +53,7 @@ const note = (name, content, pos, w = 420, h = 160) => add(name, 'n8n-nodes-base
 const retry = { retryOnFail: true, maxTries: 3, waitBetweenTries: 3000 };
 const HS = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' }; // HubSpot: Header Auth credential, Authorization: Bearer <private app token or service key>
 const HDR = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' };
-const paginate = { pagination: { pagination: { parameters: { parameter: [{ type: 'body', name: 'after', value: '={{ $response.body.paging.next.after }}' }] }, paginationMode: 'updateAParameterInEachRequest', paginationCompleteWhen: 'other', completeExpression: '={{ !$response.body.paging || !$response.body.paging.next || !$response.body.paging.next.after }}', limitPagesFetched: true, maxRequests: 50 } } };
+const paginate = { pagination: { pagination: { parameters: { parameters: [{ type: 'body', name: 'after', value: '={{ $response.body.paging.next.after }}' }] }, paginationMode: 'updateAParameterInEachRequest', paginationCompleteWhen: 'other', completeExpression: '={{ !$response.body.paging || !$response.body.paging.next || !$response.body.paging.next.after }}', limitPagesFetched: true, maxRequests: 50 } } };
 const search = (name, filtersExpr, pos, paged = true, sorted = false) => add(name, 'n8n-nodes-base.httpRequest', 4.2, {
   method: 'POST', url: `={{ ${C}.hubspot_base + '/crm/v3/objects/deals/search' }}`, ...HS, sendBody: true, specifyBody: 'json',
   jsonBody: `={{ {filterGroups:[{filters:${filtersExpr}}],properties:${props},limit:100${sorted ? `,sorts:[{propertyName:${C}.fields.queued_at,direction:'ASCENDING'}]` : ''}} }}`,
