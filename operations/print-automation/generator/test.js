@@ -31,7 +31,7 @@ for (const n of ['Send PDF', 'Send error']) ok(!wf.connections[n], n + ' is term
 
 // ---------- harness ----------
 const real = JSON.parse(JSON.stringify(cfg).replace(/REPLACE_[A-Z_]+/g, m => 'X_' + m.slice(8)));
-real.link_secret = 'test-secret-for-hmac-1234567890abcdef';
+real.link_secret = 'test-secret-for-hmac-1234567890abcdef'; real.dry_run = false; // the strict (real print) behaviour is what most tests cover
 real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.to_be_sent_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest';
 const mkitem = (json, binary) => ({ json, binary });
 const b64 = s => Buffer.from(s).toString('base64');
@@ -174,6 +174,9 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(/MB, over the printer limit of 50 MB/.test((await cr({ statusCode: 200, headers: { 'content-length': String(60 * 1048576) } }, { data: pdfBin }))[0].json.msg), 'size header over the limit -> 413 before download');
   { const s = await run('Check report', { input: [mkitem({ statusCode: 200 }, { data: pdfBin })], cfgOverride: { ...real, max_report_mb: 0.00001 } }); ok(s[0].json.status === 413, 'limit comes from Config max_report_mb'); }
 
+  { const d = { ...real, dry_run: true }; const r1 = await run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: d });
+    ok(/dry_run_not_checked/.test(r1[0].json.printer_state) && /^\d+$/.test(r1[0].json.day_start_ms), 'dry run: an unreachable gateway does not stop the run');
+    await throws(run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: { ...real, dry_run: false } }), /PRINTER_NOT_READY/); }
   // ---- dry run (stands in for the gateway, sends nothing to the printer)
   { const meta = { pack_ref: 'PK1', manifest_job_id: 'PK1-M', cases: [{ deal_id: '11', job_id: 'J1', report_type: 'UC' }, { deal_id: '22', job_id: 'J2', report_type: 'PIP' }] };
     const req = { json: { meta, body: { jobs: [{ jobId: 'PK1-M', documentUrl: 'u/m' }, { jobId: 'J1', documentUrl: 'u/1' }, { jobId: 'J2', documentUrl: 'u/2' }] } } };

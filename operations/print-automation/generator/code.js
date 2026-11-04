@@ -21,7 +21,8 @@ return [{json:{ok:true}}];`;
 
 CODE.printer_ready = String.raw`const c=$('Config').first().json.cfg;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=r.body||{};
-const stop=(why)=>{ throw new Error('PRINTER_NOT_READY: '+why+'. Nothing was claimed or printed; deals stay Queued. Fix the printer, then start a manual run.'); };
+const notes=[];
+const stop=(why)=>{ if(c.dry_run===true){ notes.push(why); return; } throw new Error('PRINTER_NOT_READY: '+why+'. Nothing was claimed or printed; deals stay Queued. Fix the printer, then start a manual run.'); };
 if(sc!==200) stop('the print gateway is unreachable or returned HTTP '+(sc||'no response'));
 const sp=String(b.spoolerStatus||''); const q=String(b.printerQueue||'');
 const state=(String(b.status||'')==='online'&&sp==='Running')?'ready':(String(b.status||'')==='online'?'spooler_'+sp.toLowerCase():String(b.status||'unknown'));
@@ -31,7 +32,7 @@ if(c.printer_queue&&q&&q!==c.printer_queue) stop('gateway queue is "'+q+'", expe
 const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
 const offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;
 const day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;
-return [{json:{printer_state:state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];`;
+return [{json:{printer_state:notes.length?'dry_run_not_checked: '+notes.join('; '):state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];`;
 
 CODE.daily_allowance = String.raw`const c=$('Config').first().json.cfg;
 const sent=Number(($input.first().json||{}).total||0);

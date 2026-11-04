@@ -49,9 +49,9 @@ const chain = (...names) => { for (let i = 0; i < names.length - 1; i++) link(na
 const C = "$('Config').first().json.cfg";
 const props = `Object.values(${C}.fields).concat(['pipeline','dealstage','hs_lastmodifieddate'])`;
 const code = (name, src, pos, notes) => add(name, 'n8n-nodes-base.code', 2, { jsCode: src }, pos, notes ? { notes, notesInFlow: true } : {});
-const HS = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' }; // HubSpot: Header Auth credential, Authorization: Bearer <private app token or service key>
+const note = (name, content, pos, w = 420, h = 160) => add(name, 'n8n-nodes-base.stickyNote', 1, { content, height: h, width: w }, pos);
 const retry = { retryOnFail: true, maxTries: 3, waitBetweenTries: 3000 };
-const HS = { authentication: 'predefinedCredentialType', nodeCredentialType: 'hubspotAppToken' }; // HubSpot: n8n 'HubSpot Service Key' (App Token) credential
+const HS = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' }; // HubSpot: Header Auth credential, Authorization: Bearer <private app token or service key>
 const HDR = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' };
 const paginate = { pagination: { pagination: { parameters: { parameter: [{ type: 'body', name: 'after', value: '={{ $response.body.paging.next.after }}' }] }, paginationMode: 'updateAParameterInEachRequest', paginationCompleteWhen: 'other', completeExpression: '={{ !$response.body.paging || !$response.body.paging.next || !$response.body.paging.next.after }}', limitPagesFetched: true, maxRequests: 50 } } };
 const search = (name, filtersExpr, pos, paged = true, sorted = false) => add(name, 'n8n-nodes-base.httpRequest', 4.2, {
