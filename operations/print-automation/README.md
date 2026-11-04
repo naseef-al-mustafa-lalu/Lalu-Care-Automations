@@ -87,5 +87,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 - The links are signed and expire after `link_valid_minutes`, but are not strictly one-time (n8n keeps no state between executions). The gateway may open a link again within that window.
 - Not import-tested in n8n here. The Crypto node (HMAC SHA256, hex) and Respond to Webhook are the two nodes to check first after import.
 
+See also `docs/Process_Flow_Credentials_and_Status.md` (snapshot of the process document: flow, credentials, errors, status).
+
 ## Gateway test pack
 The two test workflows prove the gateway connection with dummy one-page PDFs. See the files for notes; `send_print_job` defaults to false (health check only).
