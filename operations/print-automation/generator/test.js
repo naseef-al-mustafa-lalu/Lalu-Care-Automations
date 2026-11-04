@@ -79,18 +79,14 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok((await run('Daily allowance', { input: [mkitem({ total: 200 })] })).length === 0, 'limit reached ends');
 
   // ---- select / companies / batches
-  const d = (id, stage, extra = {}) => ({ id, properties: { dealstage: stage, mediref: '1000' + id, report_type: 'PIP', ...extra } });
+  const DEST = { 1: 'DWP Leeds', 2: 'DWP Leeds', 4: 'DWP Bolton', 7: 'DWP Leeds' };
+  const d = (id, stage, extra = {}) => ({ id, properties: { dealstage: stage, mediref: '1000' + id, report_type: 'PIP', destination_address: DEST[id] || (id >= 30 ? 'DWP Leeds' : ''), ...extra } });
   const pages = [mkitem({ results: [d(1, 'S_PIP'), d(2, 'S_UCHAA', { report_type: 'UC&ESA' }), d(3, 'S_CANC')] }), mkitem({ results: [d(2, 'S_UCHAA'), d(4, 'S_UCHAA', { report_type: 'Health Assessment Advisory Service' }), d(5, 'S_PIP'), d(6, 'S_PIP', { report_type: 'weird' }), d(7, 'S_PIP', { mediref: 'abc' }), d(8, 'S_PIP')] })];
   const sel = await run('Select queued deals', { input: pages });
   ok(sel.length === 1 && sel[0].json.inputs.length === 7, 'dedupe + cancelled skipped');
   const many = await run('Select queued deals', { input: [mkitem({ results: Array.from({ length: 230 }, (_, i) => d(i + 100, 'S_PIP')) })] });
   ok(many.length === 3 && many[2].json.inputs.length === 30, 'chunks of 100');
-  const A = (from, ...tos) => ({ from: { id: from }, to: tos.map(t => ({ toObjectId: t, associationTypes: [{ label: 'Third party' }, { label: null }] })) });
-  const assoc = [mkitem({ results: [A('1', 900), A('2', 900), A('4', 901), A('5', 900, 901), { from: { id: '6' }, to: [{ toObjectId: 905, associationTypes: [{ label: 'Other' }] }] }, A('7', 900)] })];
-  const pc = await run('Prepare company reads', { input: assoc });
-  ok(pc[0].json.inputs.map(x => x.id).sort().join() === '900,901', 'company ids only Third party');
-  const comps = [mkitem({ results: [{ id: '900', properties: { dest: 'DWP Leeds' } }, { id: '901', properties: { dest: 'DWP Bolton' } }] })];
-  const bpNodes = { 'Select queued deals': sel, 'Read Third party associations': assoc, 'Read destination companies': comps, 'Daily allowance': [mkitem({ allowance: 100 })] };
+  const bpNodes = { 'Select queued deals': sel, 'Daily allowance': [mkitem({ allowance: 100 })] };
   const bp = await run('Build batches and claim updates', { nodes: bpNodes });
   const packs = bp[0].json.packs; const upd = bp.flatMap(x => x.json.inputs);
   ok(packs.length === 2 && packs[0].destination === 'DWP Bolton' && packs[1].destination === 'DWP Leeds', 'destination sort');
@@ -98,18 +94,18 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(packs[1].part === 1 && packs[1].parts === 1 && packs[1].cases[0].job_id === packs[1].submission_ref + '-R01', 'part and job ids');
   const byId = Object.fromEntries(upd.map(u => [u.id, u.properties]));
   ok(byId['1'].print_status === 'preparing' && byId['1'].dispatch_hold_printing === 'true' && byId['1'].printer_job_reference === packs[1].cases[0].job_id, 'claim props use the report job id');
-  ok(byId['5'].print_status === 'needs_attention' && /found 2/.test(byId['5'].print_issue), 'two companies rejected');
-  ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /found 0/.test(byId['8'].print_issue), 'invalid cases explained');
+  ok(byId['5'].print_status === 'needs_attention' && /Destination address is empty/.test(byId['5'].print_issue), 'empty destination rejected');
+  ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /Destination address is empty/.test(byId['8'].print_issue), 'invalid cases explained');
   const capCfg = { ...real, reports_per_call: 1 };
   const bp2 = await run('Build batches and claim updates', { nodes: bpNodes, cfgOverride: capCfg });
   ok(bp2[0].json.packs.length === 3 && bp2[0].json.packs.filter(p => p.destination === 'DWP Leeds').map(p => p.part + '/' + p.parts).join() === '1/2,2/2', 'per-call cap splits a destination into labelled parts');
-  const sel25 = [mkitem({ deals: Array.from({ length: 30 }, (_, i) => d(200 + i, 'S_PIP')) })]; const assoc25 = [mkitem({ results: Array.from({ length: 30 }, (_, i) => A(String(200 + i), 900)) })];
-  const bp3 = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': sel25, 'Read Third party associations': assoc25 } });
+  const sel25 = [mkitem({ deals: Array.from({ length: 30 }, (_, i) => d(200 + i, 'S_PIP')) })];
+  const bp3 = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': sel25 } });
   ok(bp3[0].json.packs.map(p => p.cases.length).join() === '24,6', '30 reports -> 24 + 6');
-  const bp4 = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': sel25, 'Read Third party associations': assoc25 }, cfgOverride: { ...real, reports_per_call: 99 } });
+  const bp4 = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': sel25 }, cfgOverride: { ...real, reports_per_call: 99 } });
   ok(Math.max(...bp4[0].json.packs.map(p => p.cases.length)) === 24, 'hard cap 24 even if config is higher');
   const old = (id, q) => d(id, 'S_PIP', { print_queued_at: q });
-  const bpc = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': [mkitem({ deals: [old(31, '2026-11-01T10:00:00Z'), old(32, '2026-10-30T10:00:00Z'), old(33, '2026-10-31T10:00:00Z'), old(34, '')] })], 'Read Third party associations': [mkitem({ results: [A('31', 900), A('32', 900), A('33', 900), A('34', 900)] })], 'Daily allowance': [mkitem({ allowance: 2 })] } });
+  const bpc = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': [mkitem({ deals: [old(31, '2026-11-01T10:00:00Z'), old(32, '2026-10-30T10:00:00Z'), old(33, '2026-10-31T10:00:00Z'), old(34, '')] })], 'Daily allowance': [mkitem({ allowance: 2 })] } });
   ok(bpc.flatMap(x => x.json.inputs).map(u => u.id).sort().join() === '32,33', 'daily allowance: oldest queued first');
   const lp = await run('List batches', { input: [mkitem({ status: 'COMPLETE', results: [] })], nodes: { 'Build batches and claim updates': bp } }); ok(lp.length === 2, 'list batches');
   await throws(run('List batches', { input: [mkitem({ errors: [{}] })], nodes: { 'Build batches and claim updates': bp } }), /CLAIM_FAILED/);

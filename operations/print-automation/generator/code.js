@@ -52,26 +52,9 @@ for(let i=0;i<deals.length;i+=100){
 }
 return out;`;
 
-CODE.prepare_companies = String.raw`const c=$('Config').first().json.cfg;
-const assoc=$input.all().flatMap(i=>i.json.results||[]);
-const ids=new Set();
-for(const r of assoc) for(const t of (r.to||[])) if((t.associationTypes||[]).some(a=>a.label===c.third_party_label)) ids.add(String(t.toObjectId));
-const arr=[...ids]; const out=[];
-for(let i=0;i<arr.length;i+=100) out.push({json:{inputs:arr.slice(i,i+100).map(id=>({id}))}});
-return out.length?out:[{json:{inputs:[]}}];`;
-
 // Groups valid cases by destination, splits each destination into calls of reports_per_call, claims the cases.
 CODE.build_packs = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
 const deals=$('Select queued deals').all().flatMap(i=>i.json.deals);
-const assoc=$('Read Third party associations').all().flatMap(i=>i.json.results||[]);
-const comps=new Map();
-for(const i of $('Read destination companies').all()) for(const r of (i.json.results||[])) comps.set(String(r.id),String((r.properties||{})[c.company_destination_field]||'').trim());
-const destIds=new Map();
-for(const r of assoc){
-  const s=new Set();
-  for(const t of (r.to||[])) if((t.associationTypes||[]).some(a=>a.label===c.third_party_label)) s.add(String(t.toObjectId));
-  destIds.set(String(r.from.id),[...s]);
-}
 const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
 const batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;
 const when=parts.day+'/'+parts.month+'/'+parts.year+' '+parts.hour+':'+parts.minute;
@@ -84,13 +67,13 @@ for(const d of deals){
   const p=d.properties||{}; const id=String(d.id);
   const mediref=String(p[F.case_ref]||'').trim();
   const type=c.report_types[String(p[F.report_type]||'').trim()];
-  const dests=[...new Set((destIds.get(id)||[]).map(x=>comps.get(x)).filter(Boolean))];
+  const dest=String(p[F.dest_source]||'').trim();
   let bad='';
   if(!/^\d+$/.test(mediref)) bad='Case reference missing or not numeric';
   else if(!type) bad='Report type not recognised';
-  else if(dests.length!==1) bad='Exactly one Third party company with a destination is required (found '+dests.length+')';
+  else if(!dest) bad='Destination address is empty on the deal (check the Third party company)';
   if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; updates.push({id,properties:pr}); }
-  else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dests[0]});
+  else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dest});
 }
 const groups=new Map();
 for(const k of valid){ if(!groups.has(k.destination)) groups.set(k.destination,[]); groups.get(k.destination).push(k); }

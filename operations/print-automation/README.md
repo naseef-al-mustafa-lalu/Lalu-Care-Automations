@@ -14,7 +14,7 @@ Files in `n8n/`:
 
 ## How it works
 
-1. **Print run** (daily 08:30 Europe/London, or manual). Checks the printer is ready (gateway `/health`: online, spooler Running, printer Normal, right queue). Reads the queued deals, checks case reference / report type / destination, applies the daily limit (oldest first), marks them Preparing, groups by the Third party destination and splits into calls of at most `reports_per_call` (max 24).
+1. **Print run** (daily 08:30 Europe/London, or manual). Checks the printer is ready (gateway `/health`: online, spooler Running, printer Normal, right queue). Reads the queued deals, checks case reference / report type / destination, applies the daily limit (oldest first), marks them Preparing, groups by the deal's `destination_address` (synced from the Third party company) and splits into calls of at most `reports_per_call` (max 24).
 2. For each call, n8n signs one link per PDF (the manifest first, then each report) and sends **one** `POST /print-jobs` to the gateway with those links. It reads the per-job results from the same response and writes HubSpot: Printed (hold cleared, existing stage handoff only if the deal is still at an awaiting-printing stage) or Needs attention with a readable reason.
 3. **Report link** (the gateway calls this). The gateway opens each link. n8n checks the signature and expiry, then either builds the manifest PDF itself (plain PDF, no external tool) or fetches that one report from EMR+ and streams it straight back. Nothing is saved.
 4. **Stuck check** (every 15 min). If n8n restarted mid-run, deals left Preparing for `preparing_timeout_minutes` become Needs attention.

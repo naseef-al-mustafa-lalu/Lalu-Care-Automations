@@ -31,7 +31,7 @@ Stages: UC/HSA awaiting printing (64932356), PIP awaiting printing (64932357). P
 6. Later arrivals wait for the next run.
 
 ### 3. Prepare the reports by destination
-1. Cases are grouped by destination (the "Third party" company on the deal).
+1. Cases are grouped by destination (the `destination_address` property on the deal, synced from the Third party company).
 2. For each destination, n8n builds a manifest PDF containing: case reference, report type, destination, number of reports, batch ID, date and time. No claimant names unless the spec requires them.
 
 **Manifest layout:** the batch ID, destination, number of reports, and date and time appear once, at the top of the manifest. The case reference and report type appear once per report, as one line per report, in the same order the reports print behind it. Staff use this to check the printed stack against the sheet.
@@ -73,7 +73,7 @@ After successful printing with no open issue:
 |---|---|---|---|---|
 | Cardiff print gateway token (header X-Print-Agent-Token) | Sending print jobs and the health check to the gateway | n8n credential "Cardiff Print Agent — live" (Header Auth) | Naseef, token issued by Lalu IT (Jade) | In place and tested. Pilot token: must be rotated before production. |
 | EMR+ API key (Authorization: Api-Key) | Fetching completed report PDFs by mediref and deal ID | n8n Header Auth credential. Key is created in EMR+ Django admin (API EMR, internal keys). | Naseef with Liting & Emily (EMR+) | Pending |
-| HubSpot connection (OAuth2) | Reading and updating deals, reading the Third party company associations | n8n HubSpot credential | Naseef (HubSpot admin) | To connect to the sandbox portal first, then live. |
+| HubSpot connection (OAuth2) | Reading and updating deals | n8n HubSpot credential | Naseef (HubSpot admin) | To connect to the sandbox portal first, then live. |
 | Link-signing secret | Signing and checking the report links | Set in the n8n workflow Config node (`link_secret`). Never in GitHub. n8n code nodes cannot read credentials, so this is the one secret not held as a credential. | Naseef (a long random string) | To be set when the workflow is imported. |
 | Staff-action webhook key | Authenticating the HubSpot Print action webhook | n8n Header Auth credential and the HubSpot workflow header | Naseef | To be created. |
 | Email (SMTP) for alerts | Error alert emails to the team | n8n SMTP credential | Lalu IT | To be confirmed. |
@@ -142,7 +142,7 @@ After successful printing with no open issue:
 | n8n-hosted links fetched by the gateway | Tested with dummy PDFs |
 | Main print workflow rebuilt for this design (links, manifest, 24-per-call, timeout handling) | Built and checked locally (259 checks, manifest PDFs validated). Imported into n8n 4 November; to test with dummy reports. |
 | EMR+ host and API key | Pending (4 November) |
-| Destination property internal name | `destination_address` |
+| Destination property | `destination_address` on the deal (synced from the Third party company). A deal with it empty goes to Needs attention. |
 | Manifest fields | Proposed above, to confirm |
 | Batch and daily limits | To set (the gateway allows 25 jobs per call; one is the manifest) |
 | Untested: wrong checksum, duplicate job ID, paper jam / out of paper / toner effect on printer status | To test in the pilot |

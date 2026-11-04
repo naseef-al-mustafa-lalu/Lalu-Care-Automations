@@ -23,7 +23,7 @@ const cfg = {
   cancelled_rejected_stages: ['81292295', '65056856'],
   fields: {
     case_ref: 'mediref', report_type: 'report_type',
-    status: 'print_status', queued_at: 'print_queued_at', batch: 'print_batch_id', destination: 'print_destination',
+    status: 'print_status', queued_at: 'print_queued_at', batch: 'print_batch_id', destination: 'print_destination', dest_source: 'destination_address',
     submitted_at: 'print_submitted_at', completed_at: 'print_completed_at', job_ref: 'printer_job_reference',
     issue: 'print_issue', hold: 'dispatch_hold_printing', action: 'print_action', request_note: 'print_request_note'
   },
@@ -32,8 +32,6 @@ const cfg = {
     action_none: 'none', action_problem: 'report_problem', action_resolve: 'resolve_problem', action_print: 'print_reprint'
   },
   report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA' },
-  company_destination_field: 'destination_address',
-  third_party_label: 'Third party',
   preparing_timeout_minutes: 60
 };
 
@@ -76,7 +74,7 @@ add('Route', 'n8n-nodes-base.switch', 3.2, { rules: { values: ['print', 'stuck',
 chain('Config', 'Check config', 'Route');
 
 // ---------- FLOW 1: PRINT RUN ----------
-note('Flow 1 note', '## 1. Print run\nPrinter ready? → read queue → resolve destination → claim (Preparing) → per destination batch (manifest + up to 24 reports): sign one link per PDF → one call to the print gateway → read each job result → write HubSpot. The gateway fetches each PDF from this workflow (flow 4), which streams it from EMR+. Nothing is stored. A timeout means "result unknown": never resent.', [1100, -360], 620, 150);
+note('Flow 1 note', '## 1. Print run\nPrinter ready? → read queue → read destination_address from the deal → claim (Preparing) → per destination batch (manifest + up to 24 reports): sign one link per PDF → one call to the print gateway → read each job result → write HubSpot. The gateway fetches each PDF from this workflow (flow 4), which streams it from EMR+. Nothing is stored. A timeout means "result unknown": never resent.', [1100, -360], 620, 150);
 search('Guard: any Preparing deals?', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.status,operator:'EQ',value:${C}.values.preparing}]`, [1100, -120], false);
 code('Stop if run unfinished', CODE.stop_if_blocked, [1320, -120]);
 search('Read queue', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.status,operator:'EQ',value:${C}.values.queued}]`, [1540, -120], true, true);
@@ -85,9 +83,6 @@ code('Printer ready?', CODE.printer_ready, [1540, 40], 'Online + spooler Running
 search('Count sent today', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.submitted_at,operator:'GTE',value:$json.day_start_ms}]`, [1760, 40], false);
 code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day minus reports already printed today. 0 left => run ends quietly.');
 code('Select queued deals', CODE.select_queued, [1760, -120]);
-add('Read Third party associations', 'n8n-nodes-base.httpRequest', 4.2, { method: 'POST', url: `={{ ${C}.hubspot_base + '/crm/v4/associations/deals/companies/batch/read' }}`, ...HS, sendBody: true, specifyBody: 'json', jsonBody: '={{ {inputs:$json.inputs} }}', options: { response: { response: { neverError: true } } } }, [1980, -120], retry);
-code('Prepare company reads', CODE.prepare_companies, [2200, -120]);
-hsPost('Read destination companies', '/crm/v3/objects/companies/batch/read', `={{ {properties:[${C}.company_destination_field],inputs:$json.inputs} }}`, [2420, -120], { response: { response: { neverError: true } } });
 code('Build batches and claim updates', CODE.build_packs, [2640, -120], 'Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (max 24).');
 hsPost('Claim deals', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [2860, -120]);
 code('List batches', CODE.list_packs, [3080, -120]);
@@ -102,7 +97,7 @@ code('Build result updates', CODE.build_result_updates, [4840, 0], 'Stage handof
 hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [5060, 0]);
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
 link('Route', 'Guard: any Preparing deals?', 0);
-chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Read Third party associations', 'Prepare company reads', 'Read destination companies', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
+chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
 link('Next batch', 'Build job links', 1);
 chain('Build job links', 'Sign links', 'Build print request', 'Submit to gateway', 'Print outcome', 'Read current stages', 'Build result updates', 'Write print results', 'Stop if printer result unsafe');
 link('Stop if printer result unsafe', 'Next batch');
