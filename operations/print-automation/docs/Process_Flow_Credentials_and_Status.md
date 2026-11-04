@@ -73,7 +73,7 @@ After successful printing with no open issue:
 |---|---|---|---|---|
 | Cardiff print gateway token (header X-Print-Agent-Token) | Sending print jobs and the health check to the gateway | n8n credential "Cardiff Print Agent — live" (Header Auth) | Naseef, token issued by Lalu IT (Jade) | In place and tested. Pilot token: must be rotated before production. |
 | EMR+ API key (Authorization: Api-Key) | Fetching completed report PDFs by mediref and deal ID | n8n Header Auth credential. Key is created in EMR+ Django admin (API EMR, internal keys). | Naseef with Liting & Emily (EMR+) | Pending |
-| HubSpot connection (Header Auth, Bearer token) | Reading and updating deals | n8n Header Auth credential | Naseef (HubSpot admin) | To connect to the sandbox portal first, then live. |
+| HubSpot connection (Service Key / App Token) | Reading and updating deals | n8n HubSpot Service Key credential | Naseef (HubSpot admin) | To connect to the sandbox portal first, then live. |
 | Link-signing secret | Signing and checking the report links | Set in the n8n workflow Config node (`link_secret`). Never in GitHub. n8n code nodes cannot read credentials, so this is the one secret not held as a credential. | Naseef (a long random string) | To be set when the workflow is imported. |
 | Staff-action webhook | Telling n8n that Print action changed | No credential: a HubSpot private app webhook subscription (deal.propertyChange on print_action) posts to the n8n URL. n8n trusts only the deal ID and re-reads the deal. | Naseef | To be created (private app). |
 | Email (SMTP) for alerts | Error alert emails to the team | n8n SMTP credential | Lalu IT | To be confirmed. |
