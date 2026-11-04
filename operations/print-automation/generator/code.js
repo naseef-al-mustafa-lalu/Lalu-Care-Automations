@@ -250,7 +250,7 @@ return [{json:{ok:true,kind,payload,exp:Number(q.e),sig_given:String(q.s||'').to
 
 CODE.verify_signature = String.raw`const j=$input.first().json; const given=String(j.sig_given||''); const want=String(j.sig||'');
 let diff=given.length^want.length; for(let i=0;i<want.length;i++) diff|=(given.charCodeAt(i)||0)^want.charCodeAt(i);
-if(!want||diff!==0) return [{json:{ok:false,status:403,msg:'link not valid'}}];
+if(!want||diff!==0) return [{json:{ok:false,status:422,msg:'link not valid'}}];
 if(Date.now()/1000>j.exp) return [{json:{ok:false,status:410,msg:'link expired'}}];
 return [{json:{ok:true,kind:j.kind}}];`;
 

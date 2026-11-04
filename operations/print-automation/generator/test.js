@@ -130,15 +130,15 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
     const withSig = mkitem({ ...cl[0].json, sig: hmac(cl[0].json.payload, secretOverride) }); return (await run('Verify signature', { input: [withSig] }))[0].json; };
   for (const j of body.jobs) ok((await open(j.documentUrl)).ok === true, 'link verifies: ' + j.jobId);
   const url0 = body.jobs[1].documentUrl;
-  ok((await open(url0.replace(/i=\d+/, 'i=999999'))).status === 403, 'tampered deal id rejected');
-  ok((await open(url0.replace(/m=\d+/, 'm=111'))).status === 403, 'tampered case ref rejected');
-  ok((await open(url0, 'other-secret')).status === 403, 'wrong secret rejected');
-  ok((await open(url0.replace(/&s=.*$/, ''))).status === 403, 'missing signature rejected');
+  ok((await open(url0.replace(/i=\d+/, 'i=999999'))).status === 422, 'tampered deal id rejected');
+  ok((await open(url0.replace(/m=\d+/, 'm=111'))).status === 422, 'tampered case ref rejected');
+  ok((await open(url0, 'other-secret')).status === 422, 'wrong secret rejected');
+  ok((await open(url0.replace(/&s=.*$/, ''))).status === 422, 'missing signature rejected');
   const pastExp = jl[1].json.payload.replace(/e=\d+/, 'e=1000000000'); const pastUrl = url0.replace(/e=\d+/, 'e=1000000000').replace(/&s=.*$/, '&s=' + hmac(pastExp));
   ok((await open(pastUrl)).status === 410, 'expired link rejected');
   ok((await open('https://x/y?k=r&i=abc&m=1&e=9999999999&s=aa')).status === 422, 'bad deal id -> 422');
   ok((await open('https://x/y?k=z&e=1')).status === 422 && (await open('https://x/y')).status === 422, 'unknown kind / empty -> 422');
-  const manifestUrl = body.jobs[0].documentUrl; ok((await open(manifestUrl.replace('d=DWP', 'd=XXX'))).status === 403, 'tampered manifest rejected');
+  const manifestUrl = body.jobs[0].documentUrl; ok((await open(manifestUrl.replace('d=DWP', 'd=XXX'))).status === 422, 'tampered manifest rejected');
 
   // ---- manifest PDF (built inside n8n)
   const mq = Object.fromEntries(new URL(manifestUrl).searchParams.entries());
