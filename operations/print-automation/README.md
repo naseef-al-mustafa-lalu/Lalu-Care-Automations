@@ -45,7 +45,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 |---|---|
 | Gateway token (`X-Print-Agent-Token`) | n8n Header Auth credential "Cardiff Print Agent" (used by the health check and the print call). Pilot token: rotate before production |
 | EMR+ API key (`Authorization: Api-Key <key>`) | n8n Header Auth credential on the node "Fetch report from EMR+". **Pending** |
-| HubSpot | n8n "HubSpot Service Key" (App Token) credential on every HubSpot node; one per portal (sandbox, live) |
+| HubSpot | n8n Header Auth credential on every HubSpot node (`Authorization: Bearer <private app token or service key>`, scopes `crm.objects.deals.read` and `crm.objects.deals.write`); one per portal (sandbox, live) |
 | Staff action webhook | No credential. A HubSpot private app webhook subscription (`deal.propertyChange` on `print_action`) posts to it. The flow trusts only the deal ID and re-reads the deal |
 | Alert email | SMTP credential on the error workflow |
 | Link-signing secret | `link_secret` in the Config node (a long random string, set in n8n only, never committed). The only secret not held as an n8n credential, because Code and Crypto nodes cannot read credentials |

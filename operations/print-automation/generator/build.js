@@ -49,7 +49,7 @@ const chain = (...names) => { for (let i = 0; i < names.length - 1; i++) link(na
 const C = "$('Config').first().json.cfg";
 const props = `Object.values(${C}.fields).concat(['pipeline','dealstage','hs_lastmodifieddate'])`;
 const code = (name, src, pos, notes) => add(name, 'n8n-nodes-base.code', 2, { jsCode: src }, pos, notes ? { notes, notesInFlow: true } : {});
-const note = (name, content, pos, w = 420, h = 160) => add(name, 'n8n-nodes-base.stickyNote', 1, { content, height: h, width: w }, pos);
+const HS = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' }; // HubSpot: Header Auth credential, Authorization: Bearer <private app token or service key>
 const retry = { retryOnFail: true, maxTries: 3, waitBetweenTries: 3000 };
 const HS = { authentication: 'predefinedCredentialType', nodeCredentialType: 'hubspotAppToken' }; // HubSpot: n8n 'HubSpot Service Key' (App Token) credential
 const HDR = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' };
