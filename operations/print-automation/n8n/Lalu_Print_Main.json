@@ -1,13 +1,13 @@
 {
-  "name": "Lalu Print - Main (print run, monitor, staff actions)",
+  "name": "Lalu Print - Main (print run, stuck check, staff actions, report link)",
   "nodes": [
     {
       "parameters": {
-        "content": "# Lalu print automation (Phase 1)\nOne workflow, three flows:\n**1 Print run** (daily 08:30 UK or manual) → **2 Monitor** (every 5 min) → **3 Staff actions** (HubSpot webhook).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. See README.md for bindings. Activate only after the pilot checklist.",
-        "height": 180,
-        "width": 560
+        "content": "# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (daily 08:30 UK or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.",
+        "height": 200,
+        "width": 600
       },
-      "id": "46e5b9ab-38cd-4309-9c8a-aebf43c2d5a7",
+      "id": "9dc9f415-8c29-45be-af05-5d3f7e018ceb",
       "name": "README",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -27,7 +27,7 @@
           ]
         }
       },
-      "id": "c71eec47-57d1-4b66-ad8e-f2a7c9f041bf",
+      "id": "8160f035-a870-494b-842d-a24c704ff910",
       "name": "Daily 08:30 print run",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -38,7 +38,7 @@
     },
     {
       "parameters": {},
-      "id": "2ec7dce5-3471-4698-89c5-759b1658c459",
+      "id": "353edada-4437-4b8e-a4fc-62f981c097ee",
       "name": "Manual print run",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -53,13 +53,13 @@
           "interval": [
             {
               "field": "minutes",
-              "minutesInterval": 5
+              "minutesInterval": 15
             }
           ]
         }
       },
-      "id": "f79a0175-2622-4ba9-82b9-964b74838300",
-      "name": "Every 5 min monitor",
+      "id": "5842da2f-14ff-4419-9dd8-6c5ed77a8c7f",
+      "name": "Every 15 min stuck check",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -75,7 +75,7 @@
         "responseMode": "onReceived",
         "options": {}
       },
-      "id": "1137e9fe-c48f-40e0-a173-aaa553a4eda7",
+      "id": "1f4bb0fc-2491-46d6-b9bb-d193e335bec6",
       "name": "Staff action webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -88,10 +88,28 @@
     },
     {
       "parameters": {
+        "httpMethod": "GET",
+        "path": "lalu-report",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f76433c8-8550-4e6d-accf-d780ca21f1f3",
+      "name": "Report link webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        660
+      ],
+      "notes": "Called by the Cardiff print gateway, not by people. Public by design: every link is signed and expires. Use the PRODUCTION url (https://automation.lalu.co.uk/webhook/lalu-report).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
         "assignments": {
           "assignments": [
             {
-              "id": "ce593a3c-f2a3-4451-97c4-73756d25daff",
+              "id": "c394ffce-123c-4da4-88bb-b05aeb80c0fd",
               "name": "flow",
               "value": "print",
               "type": "string"
@@ -101,7 +119,7 @@
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "43947084-0152-40c2-9852-7258095804ac",
+      "id": "eb9969eb-0da2-496d-b598-339e0a8ac5de",
       "name": "Flow: print",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -115,9 +133,9 @@
         "assignments": {
           "assignments": [
             {
-              "id": "92dc82a1-86b1-4edd-b98d-0a7264624a94",
+              "id": "132f744c-05b6-41bd-81bc-bf80f0517266",
               "name": "flow",
-              "value": "monitor",
+              "value": "stuck",
               "type": "string"
             }
           ]
@@ -125,8 +143,8 @@
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "61efc6ea-ad7e-43fb-a200-8a6605afc275",
-      "name": "Flow: monitor",
+      "id": "ef22892c-7100-4c80-9827-ac9c8de9d68c",
+      "name": "Flow: stuck",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
@@ -139,7 +157,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "a49431c8-63b9-461d-abff-7c3937ec5d1e",
+              "id": "036d1a0d-1e4b-474b-8043-36856546f772",
               "name": "flow",
               "value": "staff",
               "type": "string"
@@ -149,7 +167,7 @@
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "51b25ce7-b126-4900-95ff-e148c255e590",
+      "id": "1eeb9ef6-d31a-44c3-a699-e17f586a28bd",
       "name": "Flow: staff",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -160,33 +178,57 @@
     },
     {
       "parameters": {
-        "mode": "raw",
-        "jsonOutput": "{\n  \"cfg\": {\n    \"hubspot_base\": \"https://api.hubapi.com\",\n    \"emr_base\": \"https://REPLACE_EMR_HOST\",\n    \"gotenberg_base\": \"http://REPLACE_INTERNAL_GOTENBERG:3000\",\n    \"pipeline_id\": \"28557963\",\n    \"awaiting_print_stages\": [\n      \"64932357\",\n      \"64932356\"\n    ],\n    \"pip_invoicing_stage\": \"64932358\",\n    \"to_be_sent_stage\": \"65006207\",\n    \"cancelled_rejected_stages\": [\n      \"81292295\",\n      \"65056856\"\n    ],\n    \"fields\": {\n      \"case_ref\": \"mediref\",\n      \"report_type\": \"report_type\",\n      \"status\": \"print_status\",\n      \"queued_at\": \"print_queued_at\",\n      \"batch\": \"print_batch_id\",\n      \"destination\": \"print_destination\",\n      \"submitted_at\": \"print_submitted_at\",\n      \"completed_at\": \"print_completed_at\",\n      \"job_ref\": \"printer_job_reference\",\n      \"issue\": \"print_issue\",\n      \"hold\": \"dispatch_hold_printing\",\n      \"action\": \"print_action\",\n      \"request_note\": \"print_request_note\"\n    },\n    \"values\": {\n      \"queued\": \"queued\",\n      \"preparing\": \"preparing\",\n      \"submitted\": \"sent_to_printer\",\n      \"printed\": \"printed\",\n      \"issue\": \"needs_attention\",\n      \"action_none\": \"none\",\n      \"action_problem\": \"report_problem\",\n      \"action_resolve\": \"resolve_problem\",\n      \"action_print\": \"print_reprint\"\n    },\n    \"report_types\": {\n      \"PIP\": \"PIP\",\n      \"UC&ESA\": \"UC\",\n      \"Health Assessment Advisory Service\": \"HAA\"\n    },\n    \"company_destination_field\": \"REPLACE_COMPANY_DESTINATION_PROPERTY\",\n    \"third_party_label\": \"Third party\",\n    \"printer_submit_url\": \"https://REPLACE_PRINT_BRIDGE/submit\",\n    \"printer_lookup_url\": \"https://REPLACE_PRINT_BRIDGE/job\",\n    \"printer_status_url\": \"http://10.0.60.33:8787/health\",\n    \"printer_queue\": \"CRD-PRN-01-AUTO\",\n    \"max_reports_per_pack\": 50,\n    \"max_reports_per_day\": 200,\n    \"max_preflight_queue_jobs\": 0,\n    \"max_report_bytes\": 157286400,\n    \"max_pack_bytes\": 400000000,\n    \"completion_timeout_minutes\": 30,\n    \"preparing_timeout_minutes\": 60\n  }\n}",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "985be6b7-d38c-42c0-b116-613bcfbaeffc",
+              "name": "flow",
+              "value": "link",
+              "type": "string"
+            }
+          ]
+        },
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "92d84a7b-77b9-4ecd-ba8f-225a229c3a2d",
+      "id": "c56199a1-9b7c-47d8-90c3-444fd02a256c",
+      "name": "Flow: link",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"cfg\": {\n    \"hubspot_base\": \"https://api.hubapi.com\",\n    \"n8n_public_base\": \"https://automation.lalu.co.uk\",\n    \"gateway_base\": \"http://10.0.60.33:8787\",\n    \"printer_queue\": \"CRD-PRN-01-AUTO\",\n    \"emr_mode\": \"live\",\n    \"emr_base\": \"https://REPLACE_EMR_HOST\",\n    \"link_secret\": \"REPLACE_LINK_SECRET\",\n    \"link_valid_minutes\": 30,\n    \"reports_per_call\": 24,\n    \"max_reports_per_day\": 200,\n    \"duplex\": true,\n    \"colour\": false,\n    \"pipeline_id\": \"28557963\",\n    \"awaiting_print_stages\": [\n      \"64932357\",\n      \"64932356\"\n    ],\n    \"pip_invoicing_stage\": \"64932358\",\n    \"to_be_sent_stage\": \"65006207\",\n    \"cancelled_rejected_stages\": [\n      \"81292295\",\n      \"65056856\"\n    ],\n    \"fields\": {\n      \"case_ref\": \"mediref\",\n      \"report_type\": \"report_type\",\n      \"status\": \"print_status\",\n      \"queued_at\": \"print_queued_at\",\n      \"batch\": \"print_batch_id\",\n      \"destination\": \"print_destination\",\n      \"submitted_at\": \"print_submitted_at\",\n      \"completed_at\": \"print_completed_at\",\n      \"job_ref\": \"printer_job_reference\",\n      \"issue\": \"print_issue\",\n      \"hold\": \"dispatch_hold_printing\",\n      \"action\": \"print_action\",\n      \"request_note\": \"print_request_note\"\n    },\n    \"values\": {\n      \"queued\": \"queued\",\n      \"preparing\": \"preparing\",\n      \"submitted\": \"sent_to_printer\",\n      \"printed\": \"printed\",\n      \"issue\": \"needs_attention\",\n      \"action_none\": \"none\",\n      \"action_problem\": \"report_problem\",\n      \"action_resolve\": \"resolve_problem\",\n      \"action_print\": \"print_reprint\"\n    },\n    \"report_types\": {\n      \"PIP\": \"PIP\",\n      \"UC&ESA\": \"UC\",\n      \"Health Assessment Advisory Service\": \"HAA\"\n    },\n    \"company_destination_field\": \"destination_address\",\n    \"third_party_label\": \"Third party\",\n    \"preparing_timeout_minutes\": 60\n  }\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "8396e09f-4f3d-4413-ab50-8e112a4b8fc5",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
         440,
-        240
+        300
       ],
-      "notes": "ALL settings live here. Replace every REPLACE_ value. Property names/values match the Printing automation section in HubSpot.",
+      "notes": "ALL settings live here. Replace every REPLACE_ value: link_secret = a long random string (32+ characters). emr_base = EMR+ host (only the Report link flow uses it; leave the placeholder until you have it). emr_mode \"dummy\" serves clearly labelled dummy PDFs for testing; \"live\" fetches real reports.",
       "notesInFlow": true
     },
     {
       "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg;\nconst bad=JSON.stringify(c).match(/REPLACE_[A-Z_]+/g);\nif(bad) throw new Error('SETUP_REQUIRED: set these values in the Config node: '+[...new Set(bad)].join(', '));\nreturn $input.all();"
+        "jsCode": "const c=$('Config').first().json.cfg;\nconst copy=JSON.parse(JSON.stringify(c));\ndelete copy.emr_base; // EMR+ host is only needed by the report-link flow and may still be a placeholder\nconst bad=JSON.stringify(copy).match(/REPLACE_[A-Z_]+/g);\nif(bad) throw new Error('SETUP_REQUIRED: set these values in the Config node: '+[...new Set(bad)].join(', '));\nif(Number(c.reports_per_call)<1||Number(c.reports_per_call)>24) throw new Error('SETUP_REQUIRED: reports_per_call must be 1 to 24 (the gateway allows 25 jobs per call and one is the manifest)');\nreturn $input.all();"
       },
-      "id": "ecfa2a81-9586-43ba-ad13-24e65ae9a0af",
+      "id": "664529eb-a280-472a-9eb1-e73b8e5a02c8",
       "name": "Check config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         660,
-        240
+        300
       ]
     },
     {
@@ -203,7 +245,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "6295c6e0-73f1-4166-923b-825f49dbbde7",
+                    "id": "b5c097fb-ebb4-4741-a212-599a79b4e74d",
                     "leftValue": "={{ $('Config').first().json.flow }}",
                     "rightValue": "print",
                     "operator": {
@@ -227,9 +269,9 @@
                 },
                 "conditions": [
                   {
-                    "id": "1f88f734-a6ee-4886-8cce-a8be9de9f331",
+                    "id": "2f5f0c89-ec16-4451-b59b-0a074a6bcb76",
                     "leftValue": "={{ $('Config').first().json.flow }}",
-                    "rightValue": "monitor",
+                    "rightValue": "stuck",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -239,7 +281,7 @@
                 "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "monitor"
+              "outputKey": "stuck"
             },
             {
               "conditions": {
@@ -251,7 +293,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "142cbb72-6c45-4558-8a4c-a2b898e370a1",
+                    "id": "d561bf69-1b2a-4d2c-9389-47e7cb06ef67",
                     "leftValue": "={{ $('Config').first().json.flow }}",
                     "rightValue": "staff",
                     "operator": {
@@ -264,33 +306,57 @@
               },
               "renameOutput": true,
               "outputKey": "staff"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f0dc174c-e1a2-435f-bd1e-9bdc3c0f109b",
+                    "leftValue": "={{ $('Config').first().json.flow }}",
+                    "rightValue": "link",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "link"
             }
           ]
         },
         "options": {}
       },
-      "id": "715aa744-1b3e-4d28-a5e9-9585832e6059",
+      "id": "9a9afe13-ea9f-4d09-8020-ba5ed8e84661",
       "name": "Route",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
         880,
-        240
+        300
       ]
     },
     {
       "parameters": {
-        "content": "## 1. Print run\nGuard → read queue → resolve destination → claim (Preparing) → per destination pack: download PDFs → manifest + merge → send to printer → record result. Any unsafe printer result stops the run (alert email).",
-        "height": 130,
-        "width": 520
+        "content": "## 1. Print run\nPrinter ready? → read queue → resolve destination → claim (Preparing) → per destination batch (manifest + up to 24 reports): sign one link per PDF → one call to the print gateway → read each job result → write HubSpot. The gateway fetches each PDF from this workflow (flow 4), which streams it from EMR+. Nothing is stored. A timeout means \"result unknown\": never resent.",
+        "height": 150,
+        "width": 620
       },
-      "id": "855074ec-a4ae-40a9-98fe-9c91e99b7701",
+      "id": "4940ebb5-f73b-4b66-8931-c3ad921aafe7",
       "name": "Flow 1 note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         1100,
-        -330
+        -360
       ]
     },
     {
@@ -304,7 +370,7 @@
         "jsonBody": "={{ {filterGroups:[{filters:[{propertyName:'pipeline',operator:'EQ',value:$('Config').first().json.cfg.pipeline_id},{propertyName:$('Config').first().json.cfg.fields.status,operator:'EQ',value:$('Config').first().json.cfg.values.preparing}]}],properties:Object.values($('Config').first().json.cfg.fields).concat(['pipeline','dealstage','hs_lastmodifieddate']),limit:100} }}",
         "options": {}
       },
-      "id": "5b0aec49-0c49-48e8-bd29-06dd2905ec42",
+      "id": "d225a7ce-4a9a-4a8d-82b2-912aed259924",
       "name": "Guard: any Preparing deals?",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -318,9 +384,9 @@
     },
     {
       "parameters": {
-        "jsCode": "const n=Number(($input.first().json||{}).total||0);\nif(n>0) throw new Error('PRINT_RUN_BLOCKED: '+n+' deal(s) are still Preparing from an earlier run. The monitor flags them as Needs attention after the timeout; check the printer queue, then re-run.');\nreturn [{json:{ok:true}}];"
+        "jsCode": "const n=Number(($input.first().json||{}).total||0);\nif(n>0) throw new Error('PRINT_RUN_BLOCKED: '+n+' deal(s) are still Preparing from an earlier run. The stuck check flags them as Needs attention after the timeout; check the printer queue, then re-run.');\nreturn [{json:{ok:true}}];"
       },
-      "id": "6743a601-fa8a-4b55-9e70-3e9b94f2e4a7",
+      "id": "0442e329-1c8e-4e3d-89bd-8a13ef1bb4a6",
       "name": "Stop if run unfinished",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -359,7 +425,7 @@
           }
         }
       },
-      "id": "ba20f35e-99d0-40f7-9d74-9f0926a2ea88",
+      "id": "5b57af49-fea8-45e6-bf0e-1b3ebc8d9dbd",
       "name": "Read queue",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -374,7 +440,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $('Config').first().json.cfg.printer_status_url }}",
+        "url": "={{ $('Config').first().json.cfg.gateway_base + '/health' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -388,7 +454,7 @@
           }
         }
       },
-      "id": "114e091b-35cc-4ff0-902b-427ff4f31ceb",
+      "id": "82455766-ed4c-4313-83f8-3366061ad3ec",
       "name": "Printer status check",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -397,14 +463,14 @@
         40
       ],
       "onError": "continueRegularOutput",
-      "notes": "Pre-flight: bridge + printer state before anything is claimed.",
+      "notes": "Header Auth credential \"Cardiff Print Agent\": header X-Print-Agent-Token. Pre-flight before anything is claimed.",
       "notesInFlow": true
     },
     {
       "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg;\nconst r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=r.body||{};\nconst stop=(why)=>{ throw new Error('PRINTER_NOT_READY: '+why+'. Nothing was claimed or printed; deals stay Queued. Fix the printer, then start a manual run.'); };\nif(sc!==200) stop('the print bridge is unreachable or returned HTTP '+(sc||'no response'));\nconst sp=String(b.spoolerStatus||''); const q=String(b.printerQueue||'');\nconst state=(String(b.status||'')==='online'&&sp==='Running')?'ready':(String(b.status||'')==='online'?'spooler_'+sp.toLowerCase():String(b.status||'unknown'));\nif(state!=='ready') stop('print gateway reports status \"'+(b.status||'unknown')+'\", spooler \"'+(sp||'unknown')+'\"');\nconst ps=String(b.printerStatus||''); if(ps&&ps.toLowerCase()!=='normal') stop('printer status is \"'+ps+'\"');\nif(c.printer_queue&&q&&q!==c.printer_queue) stop('gateway queue is \"'+q+'\", expected \"'+c.printer_queue+'\"');\nconst p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));\nconst offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;\nconst day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;\nreturn [{json:{printer_state:state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];"
+        "jsCode": "const c=$('Config').first().json.cfg;\nconst r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=r.body||{};\nconst stop=(why)=>{ throw new Error('PRINTER_NOT_READY: '+why+'. Nothing was claimed or printed; deals stay Queued. Fix the printer, then start a manual run.'); };\nif(sc!==200) stop('the print gateway is unreachable or returned HTTP '+(sc||'no response'));\nconst sp=String(b.spoolerStatus||''); const q=String(b.printerQueue||'');\nconst state=(String(b.status||'')==='online'&&sp==='Running')?'ready':(String(b.status||'')==='online'?'spooler_'+sp.toLowerCase():String(b.status||'unknown'));\nif(state!=='ready') stop('print gateway reports status \"'+(b.status||'unknown')+'\", spooler \"'+(sp||'unknown')+'\"');\nconst ps=String(b.printerStatus||''); if(ps&&ps.toLowerCase()!=='normal') stop('printer status is \"'+ps+'\"');\nif(c.printer_queue&&q&&q!==c.printer_queue) stop('gateway queue is \"'+q+'\", expected \"'+c.printer_queue+'\"');\nconst p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));\nconst offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;\nconst day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;\nreturn [{json:{printer_state:state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];"
       },
-      "id": "7a608ccb-e8ee-4e2a-afd5-f2dba8e0a5cc",
+      "id": "f38f5b8b-b06f-4387-bf00-9d1ca78d66dc",
       "name": "Printer ready?",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -412,7 +478,7 @@
         1540,
         40
       ],
-      "notes": "ready / ready_warning continue. offline, jammed, paper_out, door_open, toner_empty, error, busy, unreachable => stop + alert email, nothing claimed.",
+      "notes": "Online + spooler Running + printer Normal + right queue. Anything else => stop + alert email, nothing claimed.",
       "notesInFlow": true
     },
     {
@@ -426,7 +492,7 @@
         "jsonBody": "={{ {filterGroups:[{filters:[{propertyName:'pipeline',operator:'EQ',value:$('Config').first().json.cfg.pipeline_id},{propertyName:$('Config').first().json.cfg.fields.submitted_at,operator:'GTE',value:$json.day_start_ms}]}],properties:Object.values($('Config').first().json.cfg.fields).concat(['pipeline','dealstage','hs_lastmodifieddate']),limit:100} }}",
         "options": {}
       },
-      "id": "9d26906c-df5b-4274-8406-f31e18f6e5dd",
+      "id": "1f7a5148-b92b-4507-9eb8-9b785b6c2c0d",
       "name": "Count sent today",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -442,7 +508,7 @@
       "parameters": {
         "jsCode": "const c=$('Config').first().json.cfg;\nconst sent=Number(($input.first().json||{}).total||0);\nconst allowance=Math.max(0,c.max_reports_per_day-sent);\nif(allowance===0) return [];\nreturn [{json:{allowance,sent_today:sent}}];"
       },
-      "id": "e494538e-a692-48f6-99f0-f6d95b7315cf",
+      "id": "93432b66-2e4f-46b9-8795-867e50e3ed54",
       "name": "Daily allowance",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -450,14 +516,14 @@
         1980,
         40
       ],
-      "notes": "Daily limit minus reports already sent today. 0 left => run ends quietly.",
+      "notes": "max_reports_per_day minus reports already printed today. 0 left => run ends quietly.",
       "notesInFlow": true
     },
     {
       "parameters": {
         "jsCode": "const c=$('Config').first().json.cfg;\nconst seen=new Map();\nfor(const it of $input.all()) for(const d of (it.json.results||[])) seen.set(String(d.id),d);\nconst skip=new Set(c.cancelled_rejected_stages);\nconst deals=[...seen.values()].filter(d=>!skip.has((d.properties||{}).dealstage));\nif(!deals.length) return [];\nconst out=[];\nfor(let i=0;i<deals.length;i+=100){\n  const part=deals.slice(i,i+100);\n  out.push({json:{inputs:part.map(d=>({id:String(d.id)})),deals:part}});\n}\nreturn out;"
       },
-      "id": "46acf2b4-ba7b-43dc-a952-e09d8efad48e",
+      "id": "1da9c75f-58f8-4973-b267-aa1ae06c99c0",
       "name": "Select queued deals",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -483,7 +549,7 @@
           }
         }
       },
-      "id": "68405372-a462-4fc4-a2ce-948a7784a0f1",
+      "id": "1964b2fa-8909-4f39-a1cb-22712534662d",
       "name": "Read Third party associations",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -499,7 +565,7 @@
       "parameters": {
         "jsCode": "const c=$('Config').first().json.cfg;\nconst assoc=$input.all().flatMap(i=>i.json.results||[]);\nconst ids=new Set();\nfor(const r of assoc) for(const t of (r.to||[])) if((t.associationTypes||[]).some(a=>a.label===c.third_party_label)) ids.add(String(t.toObjectId));\nconst arr=[...ids]; const out=[];\nfor(let i=0;i<arr.length;i+=100) out.push({json:{inputs:arr.slice(i,i+100).map(id=>({id}))}});\nreturn out.length?out:[{json:{inputs:[]}}];"
       },
-      "id": "0fe9e118-5a8c-43d1-a0d4-b914910d1fe6",
+      "id": "adefcb62-e31d-463d-abc2-a2ad2ececa30",
       "name": "Prepare company reads",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -525,7 +591,7 @@
           }
         }
       },
-      "id": "2aa89121-d7de-442e-9415-c67218371735",
+      "id": "5102f685-26b4-48d9-b8e7-cd2b6256d2b4",
       "name": "Read destination companies",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -539,17 +605,17 @@
     },
     {
       "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst deals=$('Select queued deals').all().flatMap(i=>i.json.deals);\nconst assoc=$('Read Third party associations').all().flatMap(i=>i.json.results||[]);\nconst comps=new Map();\nfor(const i of $('Read destination companies').all()) for(const r of (i.json.results||[])) comps.set(String(r.id),String((r.properties||{})[c.company_destination_field]||'').trim());\nconst destIds=new Map();\nfor(const r of assoc){\n  const s=new Set();\n  for(const t of (r.to||[])) if((t.associationTypes||[]).some(a=>a.label===c.third_party_label)) s.add(String(t.toObjectId));\n  destIds.set(String(r.from.id),[...s]);\n}\nconst parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));\nconst batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;\nconst allowance=$('Daily allowance').first().json.allowance;\nconst qt=d=>{ const t=(d.properties||{})[F.queued_at]; const n=/^\\d+$/.test(String(t))?Number(t):Date.parse(t); return isNaN(n)?Infinity:n; };\ndeals.sort((a,b)=>qt(a)-qt(b));\nconst updates=[]; const valid=[];\nfor(const d of deals){\n  const p=d.properties||{}; const id=String(d.id);\n  const mediref=String(p[F.case_ref]||'').trim();\n  const type=c.report_types[String(p[F.report_type]||'').trim()];\n  const dests=[...new Set((destIds.get(id)||[]).map(x=>comps.get(x)).filter(Boolean))];\n  let bad='';\n  if(!/^\\d+$/.test(mediref)) bad='Case reference missing or not numeric';\n  else if(!type) bad='Report type not recognised';\n  else if(dests.length!==1) bad='Exactly one Third party company with a destination is required (found '+dests.length+')';\n  if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; updates.push({id,properties:pr}); }\n  else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dests[0]});\n}\nconst groups=new Map();\nfor(const k of valid){ if(!groups.has(k.destination)) groups.set(k.destination,[]); groups.get(k.destination).push(k); }\nconst packs=[]; let n=0;\nfor(const [destination,items] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]))){\n  items.sort((a,b)=>a.mediref.localeCompare(b.mediref));\n  for(let i=0;i<items.length;i+=c.max_reports_per_pack){\n    n++; const submission_ref=batch_id+'-P'+String(n).padStart(2,'0');\n    const cases=items.slice(i,i+c.max_reports_per_pack);\n    packs.push({batch_id,destination,submission_ref,cases});\n    for(const k of cases){ const pr={}; pr[F.status]=V.preparing; pr[F.hold]='true'; pr[F.batch]=batch_id; pr[F.job_ref]=submission_ref; pr[F.destination]=destination; pr[F.issue]=''; pr[F.submitted_at]=''; pr[F.completed_at]=''; updates.push({id:k.deal_id,properties:pr}); }\n  }\n}\nconst out=[];\nfor(let i=0;i<updates.length;i+=100) out.push({json:{inputs:updates.slice(i,i+100),packs}});\nreturn out;"
+        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst deals=$('Select queued deals').all().flatMap(i=>i.json.deals);\nconst assoc=$('Read Third party associations').all().flatMap(i=>i.json.results||[]);\nconst comps=new Map();\nfor(const i of $('Read destination companies').all()) for(const r of (i.json.results||[])) comps.set(String(r.id),String((r.properties||{})[c.company_destination_field]||'').trim());\nconst destIds=new Map();\nfor(const r of assoc){\n  const s=new Set();\n  for(const t of (r.to||[])) if((t.associationTypes||[]).some(a=>a.label===c.third_party_label)) s.add(String(t.toObjectId));\n  destIds.set(String(r.from.id),[...s]);\n}\nconst parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));\nconst batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;\nconst when=parts.day+'/'+parts.month+'/'+parts.year+' '+parts.hour+':'+parts.minute;\nconst allowance=$('Daily allowance').first().json.allowance;\nconst per=Math.max(1,Math.min(24,Number(c.reports_per_call)||24));\nconst qt=d=>{ const t=(d.properties||{})[F.queued_at]; const n=/^\\d+$/.test(String(t))?Number(t):Date.parse(t); return isNaN(n)?Infinity:n; };\ndeals.sort((a,b)=>qt(a)-qt(b));\nconst updates=[]; const valid=[];\nfor(const d of deals){\n  const p=d.properties||{}; const id=String(d.id);\n  const mediref=String(p[F.case_ref]||'').trim();\n  const type=c.report_types[String(p[F.report_type]||'').trim()];\n  const dests=[...new Set((destIds.get(id)||[]).map(x=>comps.get(x)).filter(Boolean))];\n  let bad='';\n  if(!/^\\d+$/.test(mediref)) bad='Case reference missing or not numeric';\n  else if(!type) bad='Report type not recognised';\n  else if(dests.length!==1) bad='Exactly one Third party company with a destination is required (found '+dests.length+')';\n  if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; updates.push({id,properties:pr}); }\n  else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dests[0]});\n}\nconst groups=new Map();\nfor(const k of valid){ if(!groups.has(k.destination)) groups.set(k.destination,[]); groups.get(k.destination).push(k); }\nconst packs=[]; let n=0;\nfor(const [destination,items] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]))){\n  items.sort((a,b)=>a.mediref.localeCompare(b.mediref));\n  const total=Math.ceil(items.length/per);\n  for(let i=0;i<items.length;i+=per){\n    n++; const submission_ref=batch_id+'-P'+String(n).padStart(2,'0');\n    const cases=items.slice(i,i+per).map((k,idx)=>({...k,job_id:submission_ref+'-R'+String(idx+1).padStart(2,'0')}));\n    packs.push({batch_id,destination,submission_ref,part:Math.floor(i/per)+1,parts:total,when,cases});\n    for(const k of cases){ const pr={}; pr[F.status]=V.preparing; pr[F.hold]='true'; pr[F.batch]=batch_id; pr[F.job_ref]=k.job_id; pr[F.destination]=destination; pr[F.issue]=''; pr[F.submitted_at]=''; pr[F.completed_at]=''; updates.push({id:k.deal_id,properties:pr}); }\n  }\n}\nconst out=[];\nfor(let i=0;i<updates.length;i+=100) out.push({json:{inputs:updates.slice(i,i+100),packs}});\nreturn out;"
       },
-      "id": "8e4a63e5-4ad2-4006-8452-b7ab3c08f098",
-      "name": "Build packs and claim updates",
+      "id": "4bece600-a550-46d4-9da0-73cc61072f5f",
+      "name": "Build batches and claim updates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         2640,
         -120
       ],
-      "notes": "Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing and grouped by destination (sorted).",
+      "notes": "Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (max 24).",
       "notesInFlow": true
     },
     {
@@ -563,7 +629,7 @@
         "jsonBody": "={{ {inputs:$json.inputs} }}",
         "options": {}
       },
-      "id": "08fe5f79-98b2-45ae-b3be-4f2838f632ca",
+      "id": "757b1713-b86e-4380-99c1-539faca8e6cc",
       "name": "Claim deals",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -577,10 +643,10 @@
     },
     {
       "parameters": {
-        "jsCode": "for(const i of $input.all()){\n  const j=i.json||{};\n  if(j.status==='error'||(j.errors&&j.errors.length)) throw new Error('CLAIM_FAILED: HubSpot did not accept every claim. Run stopped before printing; stuck Preparing deals are flagged by the monitor.');\n}\nconst packs=$('Build packs and claim updates').first().json.packs||[];\nreturn packs.map(p=>({json:p}));"
+        "jsCode": "for(const i of $input.all()){\n  const j=i.json||{};\n  if(j.status==='error'||(j.errors&&j.errors.length)) throw new Error('CLAIM_FAILED: HubSpot did not accept every claim. Run stopped before printing; stuck Preparing deals are flagged by the stuck check.');\n}\nconst packs=$('Build batches and claim updates').first().json.packs||[];\nreturn packs.map(p=>({json:p}));"
       },
-      "id": "26f304f4-9e88-4576-be85-777432275f23",
-      "name": "List packs",
+      "id": "308f732d-cd24-47e1-8b8e-fe800275b059",
+      "name": "List batches",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -593,203 +659,168 @@
         "batchSize": 1,
         "options": {}
       },
-      "id": "b2b3468a-a380-4d1e-a4de-e68d2ab8a35c",
-      "name": "Next pack",
+      "id": "b445cc91-ee58-42d5-b731-da64e36b16dd",
+      "name": "Next batch",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
         3300,
         -120
       ],
-      "notes": "Output 1 (loop) = next destination pack. Output 0 (done) = finished.",
+      "notes": "Output 1 (loop) = next batch. Output 0 (done) = finished.",
       "notesInFlow": true
     },
     {
       "parameters": {
-        "jsCode": "const p=$input.first().json;\nreturn p.cases.map(k=>({json:{batch_id:p.batch_id,destination:p.destination,submission_ref:p.submission_ref,case:k}}));"
+        "jsCode": "const c=$('Config').first().json.cfg;\nconst pack=$input.first().json;\nconst exp=Math.floor(Date.now()/1000)+Number(c.link_valid_minutes)*60;\nconst tcode={PIP:'P',UC:'U',HAA:'H'};\nconst canon=q=>Object.keys(q).map(k=>k+'='+encodeURIComponent(String(q[k]))).join('&');\nconst base={pack_ref:pack.submission_ref,batch_id:pack.batch_id,destination:pack.destination,started_ms:Date.now()};\nconst items=[];\nconst mq={k:'m',b:pack.batch_id,r:pack.submission_ref,d:pack.destination,p:pack.part,n:pack.parts,w:pack.when,e:exp,c:pack.cases.map(k=>k.mediref+'-'+tcode[k.report_type]).join('.')};\nitems.push({json:{...base,job_id:pack.submission_ref+'-M',kind:'manifest',query:mq,payload:canon(mq),cases:pack.cases.map(k=>({deal_id:k.deal_id,job_id:k.job_id,report_type:k.report_type}))}});\nfor(const k of pack.cases){ const q={k:'r',i:k.deal_id,m:k.mediref,e:exp}; items.push({json:{...base,job_id:k.job_id,kind:'report',query:q,payload:canon(q)}}); }\nreturn items;"
       },
-      "id": "a5c44003-ef23-49c0-82d8-56a8b443c895",
-      "name": "Expand cases",
+      "id": "c3554cf4-cfb1-4edf-afad-e5cd0247d687",
+      "name": "Build job links",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         3520,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $json.case.mediref + '/completed_report/?hubspot_deal_id=' + $json.case.deal_id }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 120000,
-          "response": {
-            "response": {
-              "fullResponse": true,
-              "neverError": true,
-              "responseFormat": "file",
-              "outputPropertyName": "pdf"
-            }
-          }
-        }
-      },
-      "id": "4522e072-25f9-462e-9670-e8be79b3ed2e",
-      "name": "Download report",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3740,
-        0
       ],
-      "onError": "continueRegularOutput",
-      "notes": "Bind Header Auth credential: Name=Authorization, Value=Api-Key <key>.",
+      "notes": "One item per print job: the manifest first, then each report. Each gets signed text.",
       "notesInFlow": true
     },
     {
       "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg;\nconst inp=$input.all(); const ok=[]; const failed=[]; const binary={}; let meta=null; let all403=true;\nconst reasons={instruction_not_completed:'Report not completed yet in EMR+',report_not_available:'Completed report file is missing in EMR+',report_too_large:'Report is over the EMR+ size limit',hubspot_deal_id_mismatch:'HubSpot deal ID does not match the EMR+ case',instruction_not_found:'No EMR+ case found for this case reference',invalid_medi_ref:'Case reference is not valid',missing_hubspot_deal_id:'Deal ID was not sent to EMR+',report_invalid:'Report file is not a readable PDF or is too large',access_denied:'EMR+ refused access (API key or IP)'};\nfor(let i=0;i<inp.length;i++){\n  const src=$('Expand cases').itemMatching(i).json; meta=meta||src;\n  const it=inp[i]; const r=it.json||{}; const sc=Number(r.statusCode||0);\n  if(sc!==403) all403=false;\n  let good=false; let code='download_failed';\n  if(it.binary&&it.binary.pdf){\n    const buf=await this.helpers.getBinaryDataBuffer(i,'pdf');\n    if(sc===200){\n      if(buf.length>5&&buf.subarray(0,5).toString()==='%PDF-'&&buf.length<=c.max_report_bytes) good=true; else code='report_invalid';\n    } else {\n      try{ const j=JSON.parse(buf.toString('utf8')); code=j.code||(j.detail?'access_denied':'error_'+sc); }catch(e){ code='error_'+sc; }\n    }\n  }\n  if(good){\n    ok.push(src.case);\n    const key='r_'+String(ok.length).padStart(4,'0');\n    binary[key]={...it.binary.pdf,fileName:String(ok.length).padStart(6,'0')+'_report_'+src.case.mediref+'.pdf',mimeType:'application/pdf'};\n  } else {\n    const retry=(sc===0||sc===429||sc>=500)&&code!=='report_invalid';\n    failed.push({deal_id:src.case.deal_id,kind:retry?'retry':'attention',reason:(reasons[code]||('EMR+ returned '+(sc||'no response')+' ('+code+')'))});\n  }\n}\nif(all403&&inp.length) throw new Error('EMR_ACCESS_DENIED: every download returned 403. Check the API key and that the n8n server IP is allowed in EMR+. Deals stay Preparing and are flagged by the monitor.');\nconst base={batch_id:meta.batch_id,destination:meta.destination,submission_ref:meta.submission_ref,ok_cases:ok,failed};\nif(!ok.length) return [{json:{...base,pack_ok:false}}];\nconst esc=s=>String(s).replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[ch]));\nconst html='<!doctype html><html><head><meta charset=\"utf-8\"><style>@page{size:A4;margin:14mm}body{font:12px Arial}table{width:100%;border-collapse:collapse}td,th{padding:6px;border:1px solid #aaa;text-align:left}</style></head><body><h1>Print manifest</h1><p>Batch: '+esc(meta.batch_id)+'<br>Pack: '+esc(meta.submission_ref)+'<br>Destination: '+esc(meta.destination)+'<br>Reports: '+ok.length+'</p><table><tr><th>#</th><th>Case reference</th><th>Type</th></tr>'+ok.map((k,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(k.mediref)+'</td><td>'+esc(k.report_type)+'</td></tr>').join('')+'</table></body></html>';\nconst boundary='----lalu'+Date.now().toString(16)+Math.random().toString(16).slice(2);\nconst crlf='\\r\\n';\nconst part=(name,filename,ctype,buf)=>Buffer.concat([Buffer.from('--'+boundary+crlf+'Content-Disposition: form-data; name=\"'+name+'\"'+(filename?'; filename=\"'+filename+'\"':'')+crlf+(ctype?'Content-Type: '+ctype+crlf:'')+crlf),buf,Buffer.from(crlf)]);\nconst body=Buffer.concat([part('files','index.html','text/html',Buffer.from(html)),part('preferCssPageSize',null,null,Buffer.from('true')),Buffer.from('--'+boundary+'--'+crlf)]);\nconst ct='multipart/form-data; boundary='+boundary;\nbinary.manifest_req=await this.helpers.prepareBinaryData(body,'manifest_req.bin',ct);\nreturn [{json:{...base,pack_ok:true,manifest_ct:ct},binary}];"
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.payload }}",
+        "dataPropertyName": "sig",
+        "secret": "={{ $('Config').first().json.cfg.link_secret }}",
+        "encoding": "hex"
       },
-      "id": "47d8e250-f9e1-4974-b088-6247c833a894",
-      "name": "Build pack PDF",
+      "id": "465134d2-054a-4ce5-8f41-6d15e1dd1f67",
+      "name": "Sign links",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        3740,
+        0
+      ],
+      "notes": "HMAC-SHA256 of each link with link_secret. The Report link flow checks it.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const c=$('Config').first().json.cfg;\nconst items=$input.all(); const first=items[0].json;\nfor(const it of items) if(!it.json.sig||!/^[0-9a-f]{64}$/.test(String(it.json.sig))) throw new Error('LINK_SIGNING_FAILED: could not sign the report links. Nothing was sent to the printer.');\nconst base=c.n8n_public_base.replace(/\\/$/,'')+'/webhook/lalu-report?';\nconst jobs=items.map(it=>{ const j=it.json; const q=Object.keys(j.query).map(k=>k+'='+encodeURIComponent(String(j.query[k]))).join('&')+'&s='+j.sig;\n  return {jobId:j.job_id,documentUrl:base+q,sha256:'',printerQueue:c.printer_queue,copies:1,paperSize:'A4',colour:!!c.colour,duplex:!!c.duplex}; });\nif(jobs.length>25) throw new Error('BATCH_TOO_LARGE: '+jobs.length+' jobs, the gateway allows 25.');\nconst manifest=items.find(i=>i.json.kind==='manifest').json;\nreturn [{json:{meta:{pack_ref:first.pack_ref,batch_id:first.batch_id,destination:first.destination,manifest_job_id:manifest.job_id,cases:manifest.cases,started_ms:first.started_ms,started_iso:new Date().toISOString()},body:{requestType:'batch',batchId:first.pack_ref,submittedBy:'n8n-lalu-print',jobs}}}];"
+      },
+      "id": "142e1cfc-3a78-44ca-bf3e-a2be7c3e863e",
+      "name": "Build print request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         3960,
         0
-      ],
-      "notes": "Sorts downloads into OK/failed (using EMR+ error codes) and prepares the manifest request.",
-      "notesInFlow": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "14732b15-4109-4e7f-903f-e45843c867df",
-              "leftValue": "={{ $json.pack_ok }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "0e001726-c2b7-40cf-afce-5ebf500ab1df",
-      "name": "Any reports OK?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        4180,
-        0
       ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Config').first().json.cfg.gotenberg_base + '/forms/chromium/convert/html' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "={{ $json.manifest_ct }}"
-            }
-          ]
-        },
+        "url": "={{ $('Config').first().json.cfg.gateway_base + '/print-jobs' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "binaryData",
-        "inputDataFieldName": "manifest_req",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
         "options": {
-          "timeout": 120000,
+          "timeout": 900000,
           "response": {
             "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "manifest_pdf"
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
             }
           }
         }
       },
-      "id": "a9525798-ce8a-47a7-949e-f1463e9e21dc",
-      "name": "Render manifest (Gotenberg)",
+      "id": "9a0e0f56-1008-4387-bc66-c84807ef55ee",
+      "name": "Submit to gateway",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4400,
-        -60
+        4180,
+        0
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000
+      "onError": "continueRegularOutput",
+      "notes": "NO retries here: a retry could print twice. A timeout can still print (seen in testing), so it is treated as \"result unknown\".",
+      "notesInFlow": true
     },
     {
       "parameters": {
-        "mode": "combine",
-        "combineBy": "combineByPosition",
-        "options": {}
+        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst meta=$('Build print request').first().json.meta;\nconst r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=(r.body&&typeof r.body==='object')?r.body:{};\nconst nowISO=new Date().toISOString();\nconst why={400:'the case reference was not valid',404:'EMR+ has no matching case (not found or deal ID mismatch)',409:'the report is not completed or not available in EMR+',403:'EMR+ refused access (API key or IP address)',410:'the download link expired before the printer used it',413:'the report is over the printer limit of 50 MB',422:'the download link was not valid',502:'EMR+ returned an error or something that is not a PDF',503:'EMR+ was busy, unreachable or not configured'};\nconst reason=x=>{ const m=String((x&&x.errorMessage)||'').match(/\\((\\d{3})\\)/); if(m&&why[m[1]]) return why[m[1]]+' (HTTP '+m[1]+')'; return String((x&&(x.errorMessage||x.errorCode))||'the printer reported a failure').slice(0,160); };\nlet kind='results';\nif(!sc) kind='unknown';\nelse if(sc>=400&&sc<500) kind='rejected';\nelse if(sc>=500) kind=(b.accepted===false)?'rejected':'unknown';\nelse if(b.accepted===false) kind='rejected';\nconst res=Array.isArray(b.results)?b.results:[]; const byId=new Map(res.map(x=>[String(x.jobId),x]));\nconst job=id=>{ const x=byId.get(String(id));\n  if(x){ if(x.errorCode) return {ok:false,x}; const s=String(x.status||'').toLowerCase(); if(/fail|error|reject/.test(s)) return {ok:false,x}; return {ok:String(b.batchStatus||'')!=='failed',x}; }\n  return {ok:String(b.batchStatus||'')==='completed'&&Number(b.jobsFailed||0)===0,x:null}; };\nconst mf=kind==='results'?job(meta.manifest_job_id):{ok:false,x:null};\nconst updates=[]; const handoff=[]; let okc=0, failed=0, f403=0;\nfor(const k of meta.cases){\n  const pr={};\n  if(kind==='results'){\n    const j=job(k.job_id);\n    if(j.ok){\n      okc++; pr[F.status]=V.printed; pr[F.submitted_at]=meta.started_iso; pr[F.completed_at]=nowISO;\n      if(mf.ok){ pr[F.issue]=''; pr[F.hold]='false'; handoff.push({id:k.deal_id,report_type:k.report_type,properties:pr}); continue; }\n      pr[F.hold]='true'; pr[F.issue]='Printed, but the manifest sheet did not print ('+reason(mf.x)+'). Check the stack, then use Resolve problem.';\n    } else {\n      failed++; if(/\\(403\\)/.test(String((j.x&&j.x.errorMessage)||''))) f403++;\n      pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Report not printed: '+reason(j.x)+'. Fix the cause, then use Print / reprint.';\n    }\n  } else if(kind==='rejected'){\n    pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='The print gateway rejected the batch (HTTP '+sc+(b.errorCode?', '+b.errorCode:'')+'). Nothing was printed. Fix the connection, then use Print / reprint.';\n  } else {\n    pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Print result unknown (no clear answer from the print gateway). Check the paper output and printer queue before any reprint.';\n  }\n  updates.push({id:k.deal_id,properties:pr});\n}\nreturn [{json:{kind,pack_ref:meta.pack_ref,unsafe:kind!=='results',updates,handoff,read_inputs:handoff.map(h=>({id:h.id})),jobs_ok:okc,jobs_failed:failed,all_failed_403:failed>0&&okc===0&&f403===failed,manifest_ok:mf.ok}}];"
       },
-      "id": "bf7b1724-0a09-44bc-ac90-39b0dd1004aa",
-      "name": "Combine reports and manifest",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "id": "d82120a8-d9f5-4693-a6cc-ecf9e48c2628",
+      "name": "Print outcome",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        0
+      ],
+      "notes": "Reads batchStatus and each job result / errorCode. Unknown or rejected => deals Needs attention and the run stops.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.cfg.hubspot_base + '/crm/v3/objects/deals/batch/read' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {properties:['dealstage'],inputs:$json.read_inputs} }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "33aa8472-1577-4083-addf-5a24b8d0abe1",
+      "name": "Read current stages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         4620,
         0
-      ]
+      ],
+      "retryOnFail": false
     },
     {
       "parameters": {
-        "jsCode": "const inItem=$input.first(); const meta=inItem.json;\nconst keys=Object.keys(inItem.binary).filter(k=>k.startsWith('r_')).sort();\nconst boundary='----lalu'+Date.now().toString(16)+Math.random().toString(16).slice(2);\nconst crlf='\\r\\n';\nconst part=(name,filename,ctype,buf)=>Buffer.concat([Buffer.from('--'+boundary+crlf+'Content-Disposition: form-data; name=\"'+name+'\"'+(filename?'; filename=\"'+filename+'\"':'')+crlf+(ctype?'Content-Type: '+ctype+crlf:'')+crlf),buf,Buffer.from(crlf)]);\nconst chunks=[part('files','000000_manifest.pdf','application/pdf',await this.helpers.getBinaryDataBuffer(0,'manifest_pdf'))];\nfor(const k of keys) chunks.push(part('files',inItem.binary[k].fileName,'application/pdf',await this.helpers.getBinaryDataBuffer(0,k)));\nchunks.push(Buffer.from('--'+boundary+'--'+crlf));\nconst ct='multipart/form-data; boundary='+boundary;\nconst req=await this.helpers.prepareBinaryData(Buffer.concat(chunks),'merge_req.bin',ct);\nreturn [{json:{...meta,merge_ct:ct},binary:{merge_req:req}}];"
+        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst o=$('Print outcome').first().json; const r=$input.first().json||{};\nconst stage=new Map((((r.body||{}).results)||[]).map(x=>[String(x.id),(x.properties||{}).dealstage]));\nconst upd=o.updates.slice();\nfor(const h of o.handoff){\n  const pr={...h.properties};\n  if(!stage.has(h.id)){ pr[F.hold]='true'; pr[F.issue]='Printed. The stage handoff was not applied because the deal could not be read. Use Resolve problem to hand off.'; }\n  else if(c.awaiting_print_stages.includes(stage.get(h.id))){ pr.dealstage=(h.report_type==='PIP')?c.pip_invoicing_stage:c.to_be_sent_stage; }\n  upd.push({id:h.id,properties:pr});\n}\nconst out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100)}});\nreturn out.length?out:[{json:{inputs:[]}}];"
       },
-      "id": "d85f497b-3f50-4af5-bd22-e03334b1e2ed",
-      "name": "Build merge request",
+      "id": "c484342c-f27a-4f05-8e04-17df69a217ea",
+      "name": "Build result updates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         4840,
         0
-      ]
+      ],
+      "notes": "Stage handoff only if the deal is still at an awaiting-printing stage right now.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Config').first().json.cfg.gotenberg_base + '/forms/pdfengines/merge' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "={{ $json.merge_ct }}"
-            }
-          ]
-        },
+        "url": "={{ $('Config').first().json.cfg.hubspot_base + '/crm/v3/objects/deals/batch/update' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotOAuth2Api",
         "sendBody": true,
-        "contentType": "binaryData",
-        "inputDataFieldName": "merge_req",
-        "options": {
-          "timeout": 120000,
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "pack"
-            }
-          }
-        }
+        "specifyBody": "json",
+        "jsonBody": "={{ {inputs:$json.inputs} }}",
+        "options": {}
       },
-      "id": "76119695-0650-45fd-af82-4cf36ac09076",
-      "name": "Merge pack (Gotenberg)",
+      "id": "8d46faa4-1e62-4d9c-8a20-acc56960cf17",
+      "name": "Write print results",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -802,10 +833,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg;\nconst meta=$('Build pack PDF').first().json;\nconst buf=await this.helpers.getBinaryDataBuffer(0,'pack');\nif(buf.subarray(0,5).toString()!=='%PDF-'||buf.length>c.max_pack_bytes) throw new Error('PACK_INVALID: merged pack for '+meta.submission_ref+' is not a PDF or is larger than the pack limit. Nothing was sent; deals stay Preparing and are flagged by the monitor.');\nconst b=$input.first().binary.pack;\nreturn [{json:{batch_id:meta.batch_id,destination:meta.destination,submission_ref:meta.submission_ref,pack_bytes:buf.length},binary:{pack:{...b,fileName:meta.submission_ref+'.pdf',mimeType:'application/pdf'}}}];"
+        "jsCode": "for(const i of $input.all()){ if(i.json.status==='error'||(i.json.errors&&i.json.errors.length)) throw new Error('RESULT_WRITE_PARTIAL: some HubSpot updates failed after printing batch '+$('Print outcome').first().json.pack_ref+'. Check the deals in Preparing / Needs attention. Do not reprint without checking the paper output.'); }\nconst o=$('Print outcome').first().json;\nif(o.unsafe) throw new Error('PRINT_RUN_PAUSED: batch '+o.pack_ref+' was not clearly accepted by the print gateway ('+o.kind+'). Remaining batches were not sent. Check the printer queue and paper output, then use Print / reprint on affected deals.');\nif(o.all_failed_403) throw new Error('EMR_ACCESS_DENIED: every report in batch '+o.pack_ref+' was refused by EMR+ (403). Check the API key and that the n8n server IP is allowed in EMR+. Remaining batches were not sent.');\nreturn [{json:{continue:true}}];"
       },
-      "id": "93d5b3da-725e-4780-a3c2-4bf12d6f7705",
-      "name": "Validate pack",
+      "id": "b724a539-97a4-42a7-9033-93bb27195264",
+      "name": "Stop if printer result unsafe",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -815,140 +846,11 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Config').first().json.cfg.printer_submit_url }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "parameterType": "formBinaryData",
-              "name": "file",
-              "inputDataFieldName": "pack"
-            },
-            {
-              "name": "submission_ref",
-              "value": "={{ $json.submission_ref }}"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 120000,
-          "response": {
-            "response": {
-              "fullResponse": true,
-              "neverError": true,
-              "responseFormat": "json"
-            }
-          }
-        }
-      },
-      "id": "4f88c83a-48f2-4f38-aff5-ea0df211113b",
-      "name": "Send pack to printer",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        5500,
-        0
-      ],
-      "onError": "continueRegularOutput",
-      "notes": "NO retries here: a retry could print twice. Timeouts/errors are treated as \"unknown\".",
-      "notesInFlow": true
-    },
-    {
-      "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst meta=$('Validate pack').first().json; const pack=$('Build pack PDF').first().json;\nconst r=$input.first().json||{}; const sc=Number(r.statusCode||0);\nlet kind='unknown';\nif(sc>=200&&sc<300) kind='accepted'; else if(sc>=400&&sc<500) kind='rejected';\nif(r.body&&r.body.status==='rejected') kind='rejected';\nconst now=new Date().toISOString();\nconst failedProps=(f)=>{ const pr={};\n  if(f.kind==='retry'){ pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.issue]='Will retry on the next run: '+f.reason; }\n  else { pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Report not printed: '+f.reason+'. Fix the cause, then use Print / reprint.'; }\n  return {id:f.deal_id,properties:pr}; };\nconst upd=[];\nfor(const k of pack.ok_cases){ const pr={};\n  if(kind==='accepted'){ pr[F.status]=V.submitted; pr[F.submitted_at]=now; }\n  else { pr[F.status]=V.issue; pr[F.hold]='true';\n    pr[F.issue]= kind==='rejected' ? 'Printer connection rejected the pack (HTTP '+sc+'). Nothing was printed. Fix the connection, then use Print / reprint.' : 'Printer result unknown. Check the paper output and printer queue before any reprint.'; }\n  upd.push({id:k.deal_id,properties:pr}); }\nfor(const f of pack.failed) upd.push(failedProps(f));\nconst out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100),unsafe:kind!=='accepted',kind,submission_ref:meta.submission_ref}});\nreturn out;"
-      },
-      "id": "475faab5-97dc-4371-ab34-fbc49e5b73b2",
-      "name": "Print outcome",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        5720,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Config').first().json.cfg.hubspot_base + '/crm/v3/objects/deals/batch/update' }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ {inputs:$json.inputs} }}",
-        "options": {}
-      },
-      "id": "ff4aa647-5e0f-4165-bd1d-22df85f640ac",
-      "name": "Write print results",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        5940,
-        0
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000
-    },
-    {
-      "parameters": {
-        "jsCode": "for(const i of $input.all()){ if(i.json.status==='error'||(i.json.errors&&i.json.errors.length)) throw new Error('RESULT_WRITE_PARTIAL: some HubSpot updates failed; the monitor will repair them from the printer record.'); }\nconst o=$('Print outcome').first().json;\nif(o.unsafe) throw new Error('PRINT_RUN_PAUSED: pack '+o.submission_ref+' was not clearly accepted by the printer ('+o.kind+'). Remaining packs were not sent. Check the printer queue and paper output, then use Print / reprint on affected deals.');\nreturn [{json:{continue:true}}];"
-      },
-      "id": "248a084e-7a0b-4c08-a243-3fd317fef7da",
-      "name": "Stop if printer result unsafe",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        6160,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst meta=$input.first().json;\nconst failedProps=(f)=>{ const pr={};\n  if(f.kind==='retry'){ pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.issue]='Will retry on the next run: '+f.reason; }\n  else { pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Report not printed: '+f.reason+'. Fix the cause, then use Print / reprint.'; }\n  return {id:f.deal_id,properties:pr}; };\nconst upd=meta.failed.map(failedProps); const out=[];\nfor(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100)}});\nreturn out;"
-      },
-      "id": "a32a85c1-93ec-4f14-bb3d-b0329bc8f9ef",
-      "name": "Failure updates (nothing to print)",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        4400,
-        200
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Config').first().json.cfg.hubspot_base + '/crm/v3/objects/deals/batch/update' }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ {inputs:$json.inputs} }}",
-        "options": {}
-      },
-      "id": "c15b7f41-9d15-4b2f-9dee-b3b50b1aa8af",
-      "name": "Write failures",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        4620,
-        200
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000
-    },
-    {
-      "parameters": {
-        "content": "## 2. Monitor (every 5 min)\nLooks up every Preparing / Sent-to-printer job on the print bridge and updates HubSpot: Printed (+ release hold + existing stage handoff), Needs attention (failed, missing, timed out). Never prints anything.",
+        "content": "## 2. Stuck check (every 15 min)\nA print run finishes inside one execution. If n8n restarted mid-run, deals can stay Preparing. After preparing_timeout_minutes they are set to Needs attention (hold on) so staff check the paper output. Never prints anything.",
         "height": 130,
-        "width": 520
+        "width": 600
       },
-      "id": "cdcea0b7-d71f-44ed-8b26-540acdcf1b43",
+      "id": "f9b6bd85-a465-4fc3-addd-4ada8c13ce33",
       "name": "Flow 2 note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -987,8 +889,8 @@
           }
         }
       },
-      "id": "cbfce8af-19af-47ba-9faf-e206a510328a",
-      "name": "Find active print jobs",
+      "id": "0140a80d-ace0-4ee2-ad5c-b896d15a5bcf",
+      "name": "Find stuck deals",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -1001,54 +903,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields;\nconst seen=new Map();\nfor(const it of $input.all()) for(const d of (it.json.results||[])) seen.set(String(d.id),d);\nconst groups=new Map();\nfor(const d of seen.values()){ const ref=String((d.properties||{})[F.job_ref]||'').trim()||'__none__'; if(!groups.has(ref)) groups.set(ref,[]); groups.get(ref).push(d); }\nreturn [...groups].map(([job_ref,deals])=>({json:{job_ref,deals}}));"
+        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst now=Date.now(); const nowISO=new Date(now).toISOString();\nconst age=t=>{ if(!t) return Infinity; const d=/^\\d+$/.test(String(t))?new Date(Number(t)):new Date(t); return isNaN(d)?Infinity:(now-d.getTime())/60000; };\nconst handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)){ const t=c.report_types[String(p[F.report_type]||'').trim()]; if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };\nconst seen=new Map();\nfor(const it of $input.all()) for(const d of (it.json.results||[])) seen.set(String(d.id),d);\nconst upd=[];\nfor(const d of seen.values()){\n  const p=d.properties||{};\n  if(age(p.hs_lastmodifieddate)>c.preparing_timeout_minutes){\n    const pr={}; pr[F.status]=V.issue; pr[F.hold]='true';\n    pr[F.issue]='The print run did not finish for this case within '+c.preparing_timeout_minutes+' minutes. Check the paper output and printer queue before any reprint, then use Print / reprint if needed.';\n    upd.push({id:String(d.id),properties:pr});\n  }\n}\nconst out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100)}});\nreturn out.length?out:[{json:{inputs:[]}}];"
       },
-      "id": "e206cd30-779f-4023-8f4a-1a22eb1d6af8",
-      "name": "Group jobs",
+      "id": "92aff0a0-8299-43e5-a0ca-76472a53466c",
+      "name": "Decide stuck updates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         1320,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Config').first().json.cfg.printer_lookup_url + '?submission_ref=' + encodeURIComponent($json.job_ref) }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 30000,
-          "response": {
-            "response": {
-              "fullResponse": true,
-              "neverError": true,
-              "responseFormat": "json"
-            }
-          }
-        }
-      },
-      "id": "0723836e-a30b-4abc-8a0f-b00ab915cf29",
-      "name": "Look up printer job",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1540,
-        540
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst now=Date.now(); const nowISO=new Date(now).toISOString();\nconst age=t=>{ if(!t) return Infinity; const d=/^\\d+$/.test(String(t))?new Date(Number(t)):new Date(t); return isNaN(d)?Infinity:(now-d.getTime())/60000; };\nconst handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)){ const t=c.report_types[String(p[F.report_type]||'').trim()]; if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };\nconst res=$input.all(); const upd=[];\nfor(let i=0;i<res.length;i++){\n  const g=$('Group jobs').itemMatching(i).json; const r=res[i].json||{}; const sc=Number(r.statusCode||0);\n  const b=r.body||{};\n  const bs = g.job_ref==='__none__' ? 'no_ref' : (sc===200 ? String(b.status||'') : (sc===404 ? 'not_found' : 'unreachable'));\n  for(const d of g.deals){\n    const p=d.properties||{}; const st=p[F.status]; const issue=String(p[F.issue]||'').trim(); const pr={};\n    const attention=(msg)=>{ pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]=msg; };\n    if(bs==='completed'){\n      pr[F.status]=V.printed; pr[F.completed_at]=b.completed_at||nowISO;\n      if(!issue){ pr[F.hold]='false'; handoff(p,pr); }\n    } else if(bs==='failed'||bs==='error'){ attention('Printer problem: '+(b.reason||'the job failed')+'. Check the printer and paper output, then use Print / reprint.'); }\n    else if(bs==='accepted'){\n      if(st===V.preparing){ pr[F.status]=V.submitted; pr[F.submitted_at]=nowISO; }\n      else if(age(p[F.submitted_at]||p.hs_lastmodifieddate)>c.completion_timeout_minutes) attention('No completion message within '+c.completion_timeout_minutes+' minutes. Check the paper output and printer queue before any reprint.');\n    } else if(bs==='not_found'){\n      if(st===V.submitted || age(p.hs_lastmodifieddate)>c.preparing_timeout_minutes) attention('The printer connection has no record of this job. Check the paper output and printer queue before any reprint.');\n    } else if(bs==='no_ref'){ attention('Print job reference is missing. Check the paper output and printer queue before any reprint.'); }\n    else if(bs==='unreachable'){\n      if(age(p.hs_lastmodifieddate)>c.preparing_timeout_minutes) attention('Printer connection unreachable for over '+c.preparing_timeout_minutes+' minutes. Check it, then use Print / reprint.');\n    } else { /* unrecognised status: leave for next check */ }\n    if(Object.keys(pr).length) upd.push({id:String(d.id),properties:pr});\n  }\n}\nconst out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100)}});\nreturn out;"
-      },
-      "id": "da4dc20a-1601-4e4a-892a-dd8e835d7902",
-      "name": "Decide monitor updates",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1760,
         540
       ]
     },
@@ -1063,12 +925,12 @@
         "jsonBody": "={{ {inputs:$json.inputs} }}",
         "options": {}
       },
-      "id": "8dab3c22-1dec-4c3d-8f63-21060d9f8989",
-      "name": "Apply monitor updates",
+      "id": "478768d7-24b5-4304-80c2-9a0f86ff1132",
+      "name": "Apply stuck updates",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1980,
+        1540,
         540
       ],
       "retryOnFail": true,
@@ -1077,11 +939,11 @@
     },
     {
       "parameters": {
-        "content": "## 3. Staff actions\nHubSpot sends the deal ID. n8n re-reads the deal, validates the request (note required, no active job, etc.) and updates it. Rejections are written to the Print request note as \"REJECTED: …\". Action is reset to None.",
+        "content": "## 3. Staff actions\nHubSpot sends the deal ID. n8n re-reads the deal, validates the request (note required, no active job, etc.) and updates it. Rejections are written to the Print request note as \"REJECTED: ...\". Print action is reset to None. Needs no printer call: the deal record is the source of truth.",
         "height": 130,
-        "width": 520
+        "width": 600
       },
-      "id": "236a294f-9202-44a1-bbfd-d0e9a0dbaf6d",
+      "id": "4057e847-9436-4a73-8a03-b946121ff1bc",
       "name": "Flow 3 note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -1094,7 +956,7 @@
       "parameters": {
         "jsCode": "const b=$('Config').first().json.body||{};\nconst id=String(b.deal_id!==undefined?b.deal_id:(b.hs_object_id!==undefined?b.hs_object_id:''));\nif(!/^\\d+$/.test(id)) throw new Error('STAFF_REQUEST_INVALID: webhook body must contain deal_id');\nreturn [{json:{deal_id:id}}];"
       },
-      "id": "7a821621-5914-4ace-81db-18e692bc1c31",
+      "id": "7f205046-d85a-4bcf-a778-7c49264eb1d3",
       "name": "Read staff request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1111,7 +973,7 @@
         "nodeCredentialType": "hubspotOAuth2Api",
         "options": {}
       },
-      "id": "9321d045-8c65-4905-b250-d099c63c58bf",
+      "id": "23944552-9b2d-4395-8447-a973be5170a2",
       "name": "Read deal",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1125,41 +987,14 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ $('Config').first().json.cfg.printer_lookup_url + '?submission_ref=' + encodeURIComponent($json.properties[$('Config').first().json.cfg.fields.job_ref] || 'none') }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 30000,
-          "response": {
-            "response": {
-              "fullResponse": true,
-              "neverError": true,
-              "responseFormat": "json"
-            }
-          }
-        }
+        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst now=Date.now(); const nowISO=new Date(now).toISOString();\nconst age=t=>{ if(!t) return Infinity; const d=/^\\d+$/.test(String(t))?new Date(Number(t)):new Date(t); return isNaN(d)?Infinity:(now-d.getTime())/60000; };\nconst handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)){ const t=c.report_types[String(p[F.report_type]||'').trim()]; if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };\nconst deal=$input.first().json; const p=deal.properties||{}; const id=String(deal.id);\nconst action=p[F.action]; if(!action||action===V.action_none) return [];\nconst note=String(p[F.request_note]||'').trim(); const st=p[F.status];\nconst reject=(why)=>{ const pr={}; pr[F.action]=V.action_none; pr[F.request_note]='REJECTED: '+why; return [{json:{deal_id:id,properties:pr}}]; };\nif(c.cancelled_rejected_stages.includes(p.dealstage)) return reject('this deal is cancelled or rejected');\nif(!note||note.startsWith('REJECTED:')) return reject('write a new Print request note explaining the request, then set Print action again');\nconst pr={}; pr[F.action]=V.action_none;\nif(action===V.action_problem){\n  pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]=note.slice(0,500);\n} else if(action===V.action_resolve){\n  if(!p[F.completed_at]) return reject('there is no successful print record on this deal, so the hold stays. Use Print / reprint if another copy is needed');\n  pr[F.status]=V.printed; pr[F.issue]=''; pr[F.hold]='false'; handoff(p,pr);\n} else if(action===V.action_print){\n  if(st===V.preparing||st===V.submitted) return reject('the earlier job may still be active. Check the printer queue and paper output first');\n  if(!st||st===V.queued) return reject('this case has not been printed yet or is already queued');\n  pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.queued_at]=nowISO; pr[F.issue]=''; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]='';\n} else return reject('unknown Print action');\nreturn [{json:{deal_id:id,properties:pr}}];"
       },
-      "id": "d3b22035-d839-4ff9-9cf1-2ebf108e52d8",
-      "name": "Look up job for request",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1540,
-        960
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;\nconst now=Date.now(); const nowISO=new Date(now).toISOString();\nconst age=t=>{ if(!t) return Infinity; const d=/^\\d+$/.test(String(t))?new Date(Number(t)):new Date(t); return isNaN(d)?Infinity:(now-d.getTime())/60000; };\nconst handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)){ const t=c.report_types[String(p[F.report_type]||'').trim()]; if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };\nconst deal=$('Read deal').first().json; const p=deal.properties||{}; const id=String(deal.id);\nconst r=$input.first().json||{}; const bs=Number(r.statusCode||0)===200?String((r.body||{}).status||''):'';\nconst action=p[F.action]; if(!action||action===V.action_none) return [];\nconst note=String(p[F.request_note]||'').trim(); const st=p[F.status];\nconst reject=(why)=>{ const pr={}; pr[F.action]=V.action_none; pr[F.request_note]='REJECTED: '+why; return [{json:{deal_id:id,properties:pr}}]; };\nif(c.cancelled_rejected_stages.includes(p.dealstage)) return reject('this deal is cancelled or rejected');\nif(!note||note.startsWith('REJECTED:')) return reject('write a new Print request note explaining the request, then set Print action again');\nconst pr={}; pr[F.action]=V.action_none;\nif(action===V.action_problem){\n  pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]=note.slice(0,500);\n} else if(action===V.action_resolve){\n  if(bs!=='completed') return reject('there is no successful print record for this job, so the hold stays. Use Print / reprint if another copy is needed');\n  pr[F.status]=V.printed; pr[F.issue]=''; pr[F.hold]='false'; pr[F.completed_at]=p[F.completed_at]||nowISO; handoff(p,pr);\n} else if(action===V.action_print){\n  if(st===V.preparing||st===V.submitted||bs==='accepted') return reject('the earlier job may still be active. Check the printer queue and paper output first');\n  if(!st||st===V.queued) return reject('this case has not been printed yet or is already queued');\n  pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.queued_at]=nowISO; pr[F.issue]=''; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]='';\n} else return reject('unknown Print action');\nreturn [{json:{deal_id:id,properties:pr}}];"
-      },
-      "id": "e28eaabe-55a5-4ef8-be70-20a9b7e5fee4",
+      "id": "5c3916b0-b041-4d48-a8f7-26337492a543",
       "name": "Decide staff action",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1760,
+        1540,
         960
       ]
     },
@@ -1174,17 +1009,357 @@
         "jsonBody": "={{ {properties:$json.properties} }}",
         "options": {}
       },
-      "id": "bb5e6062-68b3-428f-a3d1-987ed077ebe5",
+      "id": "6cadd51f-7cf6-4180-8e9f-183ce08c8a22",
       "name": "Apply staff action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1980,
+        1760,
         960
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "content": "## 4. Report link\nThe print gateway opens one link per job. We check the signature and expiry, then: manifest => build a plain PDF here; report => stream it from EMR+ (or a labelled dummy PDF in test mode). The PDF is never saved. Errors answer with a status code the print run turns into a readable reason (404 no case, 409 not completed, 403 EMR+ access, 410 expired, 422 bad link, 503 EMR+ unavailable/not configured).",
+        "height": 160,
+        "width": 640
+      },
+      "id": "7b0b1215-80cf-4ab2-bdfa-ed9011e5160a",
+      "name": "Flow 4 note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const q=$('Config').first().json.query||{};\nconst bad=(status,msg)=>[{json:{ok:false,status,msg}}];\nconst kind=String(q.k||'');\nconst orders={r:['k','i','m','e'],m:['k','b','r','d','p','n','w','e','c']};\nif(!orders[kind]) return bad(422,'link not valid');\nfor(const k of orders[kind]) if(q[k]===undefined||String(q[k]).length>2000) return bad(422,'link not valid');\nif(!/^\\d+$/.test(String(q.e))) return bad(422,'link not valid');\nif(kind==='r'&&(!/^\\d+$/.test(String(q.i))||!/^\\d+$/.test(String(q.m)))) return bad(422,'link not valid');\nconst payload=orders[kind].map(k=>k+'='+encodeURIComponent(String(q[k]))).join('&');\nreturn [{json:{ok:true,kind,payload,exp:Number(q.e),sig_given:String(q.s||'').toLowerCase()}}];"
+      },
+      "id": "02abcc9b-e092-4f50-8a62-d615211e178f",
+      "name": "Check link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        1340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "71b4ee02-0b95-4500-bdb9-e23f8eeb3089",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6b96494a-08a9-433a-b9a6-4ed34ca9a07d",
+      "name": "Link well-formed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        1340
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.payload }}",
+        "dataPropertyName": "sig",
+        "secret": "={{ $('Config').first().json.cfg.link_secret }}",
+        "encoding": "hex"
+      },
+      "id": "152b554f-16a4-4039-89dc-4050ec8d7b0b",
+      "name": "Check signature",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j=$input.first().json; const given=String(j.sig_given||''); const want=String(j.sig||'');\nlet diff=given.length^want.length; for(let i=0;i<want.length;i++) diff|=(given.charCodeAt(i)||0)^want.charCodeAt(i);\nif(!want||diff!==0) return [{json:{ok:false,status:403,msg:'link not valid'}}];\nif(Date.now()/1000>j.exp) return [{json:{ok:false,status:410,msg:'link expired'}}];\nreturn [{json:{ok:true,kind:j.kind}}];"
+      },
+      "id": "6118061e-b8b8-455f-b628-d74b7b075287",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "eb21c973-ef4b-45d7-8eab-48fd3bc34fb0",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ce1e3646-6af6-499e-baad-2192538e344c",
+      "name": "Link valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "73968a7e-277a-4795-803d-d9669ac31278",
+              "leftValue": "={{ $json.kind === 'm' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "23076335-a0b8-4e58-8ad4-93629bf9f733",
+      "name": "Manifest link?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const q=$('Config').first().json.query||{};\nconst asc=s=>String(s).replace(/[^\\x20-\\x7e]/g,'?').replace(/[\\\\()]/g,'\\\\$&');\nconst txt=(f,size,x,y,s)=>'BT /'+f+' '+size+' Tf 1 0 0 1 '+x+' '+y+' Tm ('+asc(s)+') Tj ET\\n';\nconst buildPdf=(pages)=>{\n  const objs=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids ['+pages.map((_,i)=>(5+i*2)+' 0 R').join(' ')+'] /Count '+pages.length+' >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'];\n  pages.forEach((cs,i)=>{ objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents '+(6+i*2)+' 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> >>'); objs.push('<< /Length '+Buffer.byteLength(cs,'latin1')+' >>\\nstream\\n'+cs+'endstream'); });\n  let pdf='%PDF-1.4\\n'; const off=[];\n  objs.forEach((o,i)=>{ off.push(Buffer.byteLength(pdf,'latin1')); pdf+=(i+1)+' 0 obj\\n'+o+'\\nendobj\\n'; });\n  const x=Buffer.byteLength(pdf,'latin1');\n  pdf+='xref\\n0 '+(objs.length+1)+'\\n0000000000 65535 f \\n'+off.map(o=>String(o).padStart(10,'0')+' 00000 n \\n').join('')+'trailer\\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\\nstartxref\\n'+x+'\\n%%EOF\\n';\n  return Buffer.from(pdf,'latin1');\n};\nconst names={P:'PIP',U:'UC',H:'HAA'};\nconst rows=String(q.c||'').split('.').filter(Boolean).map(s=>{ const m=s.split('-'); return {ref:m[0],type:names[m[1]]||m[1]}; });\nconst dest=String(q.d||'').slice(0,70);\nconst pages=[]; let cur=''; let y=0; let first=true;\nconst head=()=>{ cur=''; if(first){\n    cur+=txt('F2',22,50,790,'PRINT MANIFEST');\n    cur+=txt('F1',12,50,760,'Batch: '+q.b); cur+=txt('F1',12,50,742,'Print call: '+q.r+'   (part '+q.p+' of '+q.n+')');\n    cur+=txt('F2',12,50,724,'Destination: '+dest); cur+=txt('F1',12,50,706,'Prepared: '+q.w+'   Reports in this part: '+rows.length);\n    cur+=txt('F1',10,50,684,'Check the printed reports behind this sheet against the list below before packing.');\n    y=654; first=false;\n  } else { cur+=txt('F2',12,50,800,'Manifest continued: '+q.r); y=770; }\n  cur+=txt('F2',11,50,y,'No.'); cur+=txt('F2',11,110,y,'Case reference'); cur+=txt('F2',11,260,y,'Report type'); y-=20; };\nhead();\nrows.forEach((r,i)=>{ if(y<60){ pages.push(cur); head(); }\n  cur+=txt('F1',11,50,y,String(i+1)+'.'); cur+=txt('F1',11,110,y,r.ref); cur+=txt('F1',11,260,y,r.type); y-=18; });\npages.push(cur);\nconst buf=buildPdf(pages);\nconst bin=await this.helpers.prepareBinaryData(buf,'manifest-'+String(q.r||'batch')+'.pdf','application/pdf');\nreturn [{json:{ok:true},binary:{data:bin}}];"
+      },
+      "id": "6894d4eb-4594-4b37-8fd9-24d63c3ca307",
+      "name": "Build manifest PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7a1cf00c-a5cb-4fd7-b4ee-b399f28d104d",
+              "leftValue": "={{ $('Config').first().json.cfg.emr_mode === 'dummy' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "411960da-f4d6-45da-b75a-3923be1f4eda",
+      "name": "Dummy mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2420,
+        1360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const q=$('Config').first().json.query||{};\nconst asc=s=>String(s).replace(/[^\\x20-\\x7e]/g,'?').replace(/[\\\\()]/g,'\\\\$&');\nconst txt=(f,size,x,y,s)=>'BT /'+f+' '+size+' Tf 1 0 0 1 '+x+' '+y+' Tm ('+asc(s)+') Tj ET\\n';\nconst buildPdf=(pages)=>{\n  const objs=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids ['+pages.map((_,i)=>(5+i*2)+' 0 R').join(' ')+'] /Count '+pages.length+' >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'];\n  pages.forEach((cs,i)=>{ objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents '+(6+i*2)+' 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> >>'); objs.push('<< /Length '+Buffer.byteLength(cs,'latin1')+' >>\\nstream\\n'+cs+'endstream'); });\n  let pdf='%PDF-1.4\\n'; const off=[];\n  objs.forEach((o,i)=>{ off.push(Buffer.byteLength(pdf,'latin1')); pdf+=(i+1)+' 0 obj\\n'+o+'\\nendobj\\n'; });\n  const x=Buffer.byteLength(pdf,'latin1');\n  pdf+='xref\\n0 '+(objs.length+1)+'\\n0000000000 65535 f \\n'+off.map(o=>String(o).padStart(10,'0')+' 00000 n \\n').join('')+'trailer\\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\\nstartxref\\n'+x+'\\n%%EOF\\n';\n  return Buffer.from(pdf,'latin1');\n};\nconst c=txt('F2',20,60,780,'DUMMY REPORT (TEST MODE)')+txt('F1',14,60,740,'Case reference: '+String(q.m||''))+txt('F1',14,60,715,'Deal: '+String(q.i||''))+txt('F1',12,60,680,'Not a real report. Safe to bin.')+txt('F1',12,60,660,'Generated '+new Date().toISOString());\nconst bin=await this.helpers.prepareBinaryData(buildPdf([c]),'dummy-'+String(q.m||'')+'.pdf','application/pdf');\nreturn [{json:{ok:true},binary:{data:bin}}];"
+      },
+      "id": "15b9a967-38f0-418e-a4d6-cb58b91a8921",
+      "name": "Dummy report PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $('Config').first().json.query.m + '/completed_report/?hubspot_deal_id=' + $('Config').first().json.query.i }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "dd90e698-7cef-4387-a14e-ceaf8075c783",
+      "name": "Fetch report from EMR+",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        1440
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "PLACEHOLDER until EMR+ is ready: set emr_base in Config and bind a Header Auth credential (Name: Authorization, Value: Api-Key <key>). Streams the PDF back to the gateway; nothing is stored.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const it=$input.first(); const r=it.json||{}; const sc=Number(r.statusCode||0);\nconst bad=(status,msg)=>[{json:{ok:false,status,msg}}];\nif(!sc) return bad(503,'EMR+ unreachable or not configured');\nif(sc!==200){\n  const m={400:[400,'invalid case reference'],401:[403,'EMR+ refused access'],403:[403,'EMR+ refused access'],404:[404,'case not found or deal id mismatch'],409:[409,'report not completed, not available or too large'],429:[503,'EMR+ busy']};\n  const x=m[sc]||(sc>=500?[502,'EMR+ error']:[502,'unexpected EMR+ answer']); return bad(x[0],x[1]);\n}\nif(!it.binary||!it.binary.data) return bad(502,'EMR+ sent no file');\nconst buf=await this.helpers.getBinaryDataBuffer(0,'data');\nif(buf.length<6||buf.subarray(0,5).toString()!=='%PDF-') return bad(502,'EMR+ did not send a PDF');\nif(buf.length>50*1024*1024) return bad(413,'report over the printer limit of 50 MB');\nreturn [{json:{ok:true},binary:{data:it.binary.data}}];"
+      },
+      "id": "cf00d542-2812-4a5c-af62-8adbb7fcc308",
+      "name": "Check report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9087373b-da15-4cdd-a20c-96c6b86cc305",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "59bb6677-abe2-469b-8ec9-acd018f174c2",
+      "name": "Report OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "inputDataFieldName": "data",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/pdf"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a2cf40b9-651f-4005-8c3a-0ee1f57adbd2",
+      "name": "Send PDF",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3300,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.msg }}",
+        "options": {
+          "responseCode": "={{ $json.status }}"
+        }
+      },
+      "id": "788ca572-d9d0-4c21-b4b6-af41f308ebea",
+      "name": "Send error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3300,
+        1560
+      ]
     }
   ],
   "connections": {
@@ -1210,11 +1385,11 @@
         ]
       ]
     },
-    "Every 5 min monitor": {
+    "Every 15 min stuck check": {
       "main": [
         [
           {
-            "node": "Flow: monitor",
+            "node": "Flow: stuck",
             "type": "main",
             "index": 0
           }
@@ -1232,6 +1407,17 @@
         ]
       ]
     },
+    "Report link webhook": {
+      "main": [
+        [
+          {
+            "node": "Flow: link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Flow: print": {
       "main": [
         [
@@ -1243,7 +1429,7 @@
         ]
       ]
     },
-    "Flow: monitor": {
+    "Flow: stuck": {
       "main": [
         [
           {
@@ -1255,6 +1441,17 @@
       ]
     },
     "Flow: staff": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flow: link": {
       "main": [
         [
           {
@@ -1298,7 +1495,7 @@
         ],
         [
           {
-            "node": "Find active print jobs",
+            "node": "Find stuck deals",
             "type": "main",
             "index": 0
           }
@@ -1306,6 +1503,13 @@
         [
           {
             "node": "Read staff request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check link",
             "type": "main",
             "index": 0
           }
@@ -1426,14 +1630,14 @@
       "main": [
         [
           {
-            "node": "Build packs and claim updates",
+            "node": "Build batches and claim updates",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build packs and claim updates": {
+    "Build batches and claim updates": {
       "main": [
         [
           {
@@ -1448,148 +1652,70 @@
       "main": [
         [
           {
-            "node": "List packs",
+            "node": "List batches",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "List packs": {
+    "List batches": {
       "main": [
         [
           {
-            "node": "Next pack",
+            "node": "Next batch",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Next pack": {
+    "Next batch": {
       "main": [
         [],
         [
           {
-            "node": "Expand cases",
+            "node": "Build job links",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Expand cases": {
+    "Build job links": {
       "main": [
         [
           {
-            "node": "Download report",
+            "node": "Sign links",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Download report": {
+    "Sign links": {
       "main": [
         [
           {
-            "node": "Build pack PDF",
+            "node": "Build print request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build pack PDF": {
+    "Build print request": {
       "main": [
         [
           {
-            "node": "Any reports OK?",
+            "node": "Submit to gateway",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Any reports OK?": {
-      "main": [
-        [
-          {
-            "node": "Render manifest (Gotenberg)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Combine reports and manifest",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Failure updates (nothing to print)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Render manifest (Gotenberg)": {
-      "main": [
-        [
-          {
-            "node": "Combine reports and manifest",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Combine reports and manifest": {
-      "main": [
-        [
-          {
-            "node": "Build merge request",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build merge request": {
-      "main": [
-        [
-          {
-            "node": "Merge pack (Gotenberg)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge pack (Gotenberg)": {
-      "main": [
-        [
-          {
-            "node": "Validate pack",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate pack": {
-      "main": [
-        [
-          {
-            "node": "Send pack to printer",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send pack to printer": {
+    "Submit to gateway": {
       "main": [
         [
           {
@@ -1601,6 +1727,28 @@
       ]
     },
     "Print outcome": {
+      "main": [
+        [
+          {
+            "node": "Read current stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read current stages": {
+      "main": [
+        [
+          {
+            "node": "Build result updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build result updates": {
       "main": [
         [
           {
@@ -1626,73 +1774,29 @@
       "main": [
         [
           {
-            "node": "Next pack",
+            "node": "Next batch",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Failure updates (nothing to print)": {
+    "Find stuck deals": {
       "main": [
         [
           {
-            "node": "Write failures",
+            "node": "Decide stuck updates",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Write failures": {
+    "Decide stuck updates": {
       "main": [
         [
           {
-            "node": "Next pack",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Find active print jobs": {
-      "main": [
-        [
-          {
-            "node": "Group jobs",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Group jobs": {
-      "main": [
-        [
-          {
-            "node": "Look up printer job",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Look up printer job": {
-      "main": [
-        [
-          {
-            "node": "Decide monitor updates",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Decide monitor updates": {
-      "main": [
-        [
-          {
-            "node": "Apply monitor updates",
+            "node": "Apply stuck updates",
             "type": "main",
             "index": 0
           }
@@ -1714,17 +1818,6 @@
       "main": [
         [
           {
-            "node": "Look up job for request",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Look up job for request": {
-      "main": [
-        [
-          {
             "node": "Decide staff action",
             "type": "main",
             "index": 0
@@ -1742,6 +1835,173 @@
           }
         ]
       ]
+    },
+    "Check link": {
+      "main": [
+        [
+          {
+            "node": "Link well-formed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link well-formed?": {
+      "main": [
+        [
+          {
+            "node": "Check signature",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check signature": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Link valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link valid?": {
+      "main": [
+        [
+          {
+            "node": "Manifest link?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manifest link?": {
+      "main": [
+        [
+          {
+            "node": "Build manifest PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dummy mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build manifest PDF": {
+      "main": [
+        [
+          {
+            "node": "Send PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dummy mode?": {
+      "main": [
+        [
+          {
+            "node": "Dummy report PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch report from EMR+",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dummy report PDF": {
+      "main": [
+        [
+          {
+            "node": "Send PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch report from EMR+": {
+      "main": [
+        [
+          {
+            "node": "Check report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check report": {
+      "main": [
+        [
+          {
+            "node": "Report OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report OK?": {
+      "main": [
+        [
+          {
+            "node": "Send PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -1752,7 +2012,7 @@
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none",
     "saveManualExecutions": false,
-    "executionTimeout": 3000
+    "executionTimeout": 7200
   },
   "pinData": {},
   "tags": []
