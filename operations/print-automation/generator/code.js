@@ -198,10 +198,22 @@ const out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(
 return out.length?out:[{json:{inputs:[]}}];`.replace('${HELPERS}', HELPERS);
 
 // ------------------------------------------------------------------ staff actions (HubSpot is the only record)
-CODE.read_request = String.raw`const b=$('Config').first().json.body||{};
-const id=String(b.deal_id!==undefined?b.deal_id:(b.hs_object_id!==undefined?b.hs_object_id:''));
-if(!/^\d+$/.test(id)) throw new Error('STAFF_REQUEST_INVALID: webhook body must contain deal_id');
-return [{json:{deal_id:id}}];`;
+CODE.read_request = String.raw`const c=$('Config').first().json.cfg; const F=c.fields;
+const b=$('Config').first().json.body;
+const events=Array.isArray(b)?b:[b||{}];
+const ids=new Set();
+for(const e of events){
+  if(!e||typeof e!=='object') continue;
+  if(e.subscriptionType){ // a HubSpot webhook event: only a Print action change counts, and "none" is our own reset
+    if(!/^deal\./.test(String(e.subscriptionType))) continue;
+    if(e.propertyName&&e.propertyName!==F.action) continue;
+    if(e.propertyValue!==undefined&&String(e.propertyValue)===c.values.action_none) continue;
+  }
+  const id=String(e.objectId!==undefined?e.objectId:(e.deal_id!==undefined?e.deal_id:(e.hs_object_id!==undefined?e.hs_object_id:'')));
+  if(/^\d+$/.test(id)) ids.add(id);
+}
+if(!ids.size){ if(events.some(e=>e&&e.subscriptionType)) return []; throw new Error('STAFF_REQUEST_INVALID: send a HubSpot webhook event or a body with deal_id'); }
+return [...ids].map(id=>({json:{deal_id:id}}));`;
 
 CODE.decide_staff = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
 ${HELPERS}

@@ -224,6 +224,10 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   s = await stf({ print_action: 'print_reprint', print_request_note: 'REJECTED: old', print_status: 'printed' }); ok(/REJECTED: write a new/.test(s[0].json.properties.print_request_note), 'stale rejected note not reusable');
   await throws(run('Read staff request', { nodes: { __body: { deal_id: 'abc' } } }), /STAFF_REQUEST_INVALID/);
   ok((await run('Read staff request', { nodes: { __body: { deal_id: '123' } } }))[0].json.deal_id === '123', 'deal id read');
+  const ev = (id, v, name = 'print_action', type = 'deal.propertyChange') => ({ objectId: id, propertyName: name, propertyValue: v, subscriptionType: type });
+  const rs = await run('Read staff request', { nodes: { __body: [ev(11, 'report_problem'), ev(11, 'resolve_problem'), ev(12, 'print_reprint'), ev(13, 'none'), ev(14, 'x', 'dealname'), ev(15, 'x', 'print_action', 'contact.propertyChange')] } });
+  ok(rs.map(x => x.json.deal_id).join() === '11,12', 'HubSpot event batch: unique deals, only Print action changes, our own reset to none ignored');
+  ok((await run('Read staff request', { nodes: { __body: [ev(13, 'none')] } })).length === 0, 'reset-only batch does nothing');
 
   console.log('PASS', pass, 'checks');
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });
