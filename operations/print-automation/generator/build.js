@@ -15,6 +15,7 @@ const cfg = {
   emr_retry_500_wait_seconds: 30,
   emr_retry_500_max: 1,
   link_secret: 'REPLACE_LINK_SECRET',
+  dry_run: true,
   max_report_mb: 50,
   link_valid_minutes: 30,
   reports_per_call: 24,
@@ -104,7 +105,8 @@ code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
 link('Route', 'Guard: any Preparing deals?', 0);
 chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
 link('Next batch', 'Build job links', 1);
-chain('Build job links', 'Sign links', 'Build print request', 'Submit to gateway', 'Print outcome', 'Read current stages', 'Build result updates', 'Write print results', 'Stop if printer result unsafe');
+chain('Build job links', 'Sign links', 'Build print request');
+chain('Submit to gateway', 'Print outcome', 'Read current stages', 'Build result updates', 'Write print results', 'Stop if printer result unsafe');
 link('Stop if printer result unsafe', 'Next batch');
 
 // ---------- FLOW 2: STUCK CHECK ----------
@@ -156,6 +158,12 @@ chain('Fetch report from EMR+', 'Check report', 'Retry EMR+?');
 link('Retry EMR+?', 'Wait before retry', 0); link('Retry EMR+?', 'Report OK?', 1);
 link('Wait before retry', 'Fetch report from EMR+');
 link('Report OK?', 'Send PDF', 0); link('Report OK?', 'Send error', 1);
+// dry run: fetch every signed link exactly as the gateway would, but send nothing to the printer
+ifNode('Dry run?', '={{ $(\'Config\').first().json.cfg.dry_run === true }}', true, [4180, -220]);
+code('Dry run: fetch links, no printing', CODE.dry_run, [4400, -220], 'DRY RUN (Config dry_run = true): fetches each signed report link from this workflow, like the gateway would, so the signature, EMR+ call, size and PDF checks all run. NOTHING is sent to the printer. Deals are left Queued with a DRY RUN message, or Needs attention if a fetch failed.');
+hsPost('Write dry run results', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [4620, -220]);
+link('Build print request', 'Dry run?'); link('Dry run?', 'Dry run: fetch links, no printing', 0); link('Dry run?', 'Submit to gateway', 1);
+chain('Dry run: fetch links, no printing', 'Write dry run results', 'Next batch');
 
 const main = {
   name: 'Lalu Print - Main (print run, stuck check, staff actions, report link)',

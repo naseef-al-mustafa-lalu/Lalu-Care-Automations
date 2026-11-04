@@ -93,3 +93,6 @@ See also `docs/Process_Flow_Credentials_and_Status.md` (snapshot of the process 
 
 ## Gateway test pack
 The two test workflows prove the gateway connection with dummy one-page PDFs. See the files for notes; `send_print_job` defaults to false (health check only).
+
+## Dry run
+`dry_run` in Config (default `true`) makes the print run do everything except send to the printer: it checks the queue, destination and printer health, builds and signs every link, then fetches each link itself (exactly as the gateway would, so the signature, EMR+ call, size limit and PDF checks all run). Deals stay Queued with a `DRY RUN OK` note in `print_issue`, or go to Needs attention with `DRY RUN FAILED` and the reason. Nothing is marked printed and nothing reaches the printer. **Set `dry_run` to `false` in Config to print for real (required at go-live).** The workflow must be published for the dry run to work, because it fetches its own production report-link webhook.

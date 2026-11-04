@@ -316,4 +316,29 @@ if(buf.length<6||buf.subarray(0,5).toString()!=='%PDF-') return bad(502,'EMR+ di
 if(buf.length>maxB) return bad(413,'report is '+(buf.length/1048576).toFixed(1)+' MB, over the printer limit of '+maxMb+' MB');
 return [{json:{ok:true,retry:false},binary:{data:it.binary.data}}];`;
 
+// ---------- dry run: stands in for the print gateway, sends nothing to the printer ----------
+CODE.dry_run = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
+const req=$input.first().json; const meta=req.meta; const jobs=req.body.jobs;
+const res=new Map();
+for(const j of jobs){
+  let sc=0, size=0, pdf=false, said='';
+  try{
+    const r=await this.helpers.httpRequest({method:'GET',url:j.documentUrl,returnFullResponse:true,encoding:'arraybuffer',ignoreHttpStatusCodes:true,timeout:300000});
+    sc=Number(r.statusCode||0); const b=Buffer.from(r.body||[]); size=b.length; pdf=size>5&&b.subarray(0,5).toString()==='%PDF-';
+    if(sc!==200||!pdf) said=b.subarray(0,300).toString('utf8').replace(/\s+/g,' ').trim().slice(0,160);
+  }catch(e){ said=String(e&&e.message||e).slice(0,160); }
+  res.set(String(j.jobId),{ok:sc===200&&pdf,sc,size,said});
+}
+const mb=n=>(n/1048576).toFixed(2)+' MB';
+const mf=res.get(String(meta.manifest_job_id))||{ok:false,sc:0,said:'no manifest'};
+const inputs=[]; const lines=[];
+for(const k of meta.cases){
+  const r=res.get(String(k.job_id))||{ok:false,sc:0,size:0,said:'no result'};
+  const pr={}; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]='';
+  if(r.ok&&mf.ok){ pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.issue]='DRY RUN OK: nothing was sent to the printer. Report fetched from EMR+ ('+mb(r.size)+') and would print to the destination shown. Set dry_run to false in Config to print for real.'; }
+  else { pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='DRY RUN FAILED (nothing was sent to the printer): '+(r.ok?'manifest sheet failed ('+mf.sc+' '+mf.said+')':'report link answered '+r.sc+(r.said?' - '+r.said:''))+'. Fix the cause, then use Print / reprint.'; }
+  inputs.push({id:k.deal_id,properties:pr}); lines.push(k.deal_id+': '+pr[F.issue]);
+}
+return [{json:{dry_run:true,pack_ref:meta.pack_ref,inputs,summary:lines}}];`;
+
 module.exports = CODE;

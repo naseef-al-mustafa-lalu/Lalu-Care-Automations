@@ -35,12 +35,13 @@ real.link_secret = 'test-secret-for-hmac-1234567890abcdef';
 real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.to_be_sent_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest';
 const mkitem = (json, binary) => ({ json, binary });
 const b64 = s => Buffer.from(s).toString('base64');
-async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0 } = {}) {
+async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, http } = {}) {
   const c = cfgOverride || real;
   const env = { ...nodes, Config: [mkitem({ cfg: c, flow: 'x', body: nodes.__body, query: nodes.__query })] };
   const $ = n => { const a = env[n]; if (!a) throw new Error('Node not executed: ' + n); return { first: () => a[0], all: () => a, itemMatching: i => a[i], item: a[0] }; };
   const $input = { all: () => input, first: () => input[0] };
   const ctx = { helpers: {
+    async httpRequest(o) { return http(o); },
     async getBinaryDataBuffer(i, key) { return Buffer.from(input[i].binary[key].data, 'base64'); },
     async prepareBinaryData(buf, fileName, mimeType) { return { data: buf.toString('base64'), fileName, mimeType }; } } };
   const fn = new AsyncFunction('$', '$input', '$json', '$execution', '$runIndex', codeOf(name));
@@ -172,6 +173,25 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
     ok(/EMR\+ said: hubspot_deal_id_mismatch: medi ref is not linked to this deal/.test(m), 'EMR+ error text is passed on'); }
   ok(/MB, over the printer limit of 50 MB/.test((await cr({ statusCode: 200, headers: { 'content-length': String(60 * 1048576) } }, { data: pdfBin }))[0].json.msg), 'size header over the limit -> 413 before download');
   { const s = await run('Check report', { input: [mkitem({ statusCode: 200 }, { data: pdfBin })], cfgOverride: { ...real, max_report_mb: 0.00001 } }); ok(s[0].json.status === 413, 'limit comes from Config max_report_mb'); }
+
+  // ---- dry run (stands in for the gateway, sends nothing to the printer)
+  { const meta = { pack_ref: 'PK1', manifest_job_id: 'PK1-M', cases: [{ deal_id: '11', job_id: 'J1', report_type: 'UC' }, { deal_id: '22', job_id: 'J2', report_type: 'PIP' }] };
+    const req = { json: { meta, body: { jobs: [{ jobId: 'PK1-M', documentUrl: 'u/m' }, { jobId: 'J1', documentUrl: 'u/1' }, { jobId: 'J2', documentUrl: 'u/2' }] } } };
+    const pdf = Buffer.from('%PDF-1.4 ' + 'x'.repeat(2 * 1048576));
+    const http = async o => o.url === 'u/2' ? { statusCode: 404, body: Buffer.from(JSON.stringify({ error: 'hubspot_deal_id_mismatch' })) } : { statusCode: 200, body: pdf };
+    const d = (await run('Dry run: fetch links, no printing', { input: [req], http }))[0].json;
+    const p1 = d.inputs.find(i => i.id === '11').properties, p2 = d.inputs.find(i => i.id === '22').properties;
+    ok(d.dry_run && p1.print_status === 'queued' && p1.dispatch_hold_printing === 'true' && /DRY RUN OK: nothing was sent to the printer/.test(p1.print_issue) && /2\.00 MB/.test(p1.print_issue), 'dry run: good report stays queued with a DRY RUN OK note');
+    ok(p2.print_status === 'needs_attention' && /DRY RUN FAILED/.test(p2.print_issue) && /404/.test(p2.print_issue) && /hubspot_deal_id_mismatch/.test(p2.print_issue), 'dry run: failed report goes to Needs attention with the EMR+ answer');
+    ok(p1.print_batch_id === '' && p1.printer_job_reference === '' && !('print_submitted_at' in p1 && p1.print_submitted_at), 'dry run: batch and job reference cleared, nothing marked submitted');
+    const mfBad = (await run('Dry run: fetch links, no printing', { input: [req], http: async o => o.url === 'u/m' ? { statusCode: 500, body: Buffer.from('x') } : { statusCode: 200, body: pdf } }))[0].json;
+    ok(mfBad.inputs.every(i => /manifest sheet failed/.test(i.properties.print_issue)), 'dry run: a failed manifest fails the batch');
+    const thrown = (await run('Dry run: fetch links, no printing', { input: [req], http: async () => { throw new Error('connect ECONNREFUSED'); } }))[0].json;
+    ok(thrown.inputs.every(i => i.properties.print_status === 'needs_attention' && /ECONNREFUSED/.test(i.properties.print_issue)), 'dry run: network errors are reported, not thrown');
+    ok(cfg.dry_run === true, 'dry_run defaults to true');
+    const w = JSON.parse(fs.readFileSync(path.join(__dirname, '../n8n/Lalu_Print_Main.json')));
+    const gw = w.connections['Dry run?'].main; ok(gw[0][0].node === 'Dry run: fetch links, no printing' && gw[1][0].node === 'Submit to gateway', 'Dry run? sends true to the dry run, false to the gateway');
+    ok(w.connections['Build print request'].main[0][0].node === 'Dry run?' && !JSON.stringify(w.connections['Dry run: fetch links, no printing']).includes('Submit to gateway'), 'only the false branch reaches the printer'); }
 
   // ---- gateway answer handling
   const meta = { pack_ref: pack.submission_ref, manifest_job_id: pack.submission_ref + '-M', cases: pack.cases.map(k => ({ deal_id: k.deal_id, job_id: k.job_id, report_type: k.report_type })), started_iso: '2026-11-04T08:30:00.000Z' };
