@@ -324,7 +324,7 @@ const res=new Map();
 for(const j of jobs){
   let sc=0, size=0, pdf=false, said='';
   try{
-    const r=await this.helpers.httpRequest({method:'GET',url:j.documentUrl,returnFullResponse:true,encoding:'arraybuffer',ignoreHttpStatusCodes:true,timeout:300000});
+    const r=await this.helpers.httpRequest({method:'GET',url:j.documentUrl,returnFullResponse:true,encoding:'arraybuffer',ignoreHttpStatusErrors:true,timeout:300000});
     sc=Number(r.statusCode||0); const b=Buffer.from(r.body||[]); size=b.length; pdf=size>5&&b.subarray(0,5).toString()==='%PDF-';
     if(sc!==200||!pdf) said=b.subarray(0,300).toString('utf8').replace(/\s+/g,' ').trim().slice(0,160);
   }catch(e){ said=String(e&&e.message||e).slice(0,160); }
