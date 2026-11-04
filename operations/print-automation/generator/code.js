@@ -127,7 +127,7 @@ CODE.print_outcome = String.raw`const c=$('Config').first().json.cfg; const F=c.
 const meta=$('Build print request').first().json.meta;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=(r.body&&typeof r.body==='object')?r.body:{};
 const nowISO=new Date().toISOString();
-const why={400:'the case reference was not valid',404:'EMR+ has no matching case (not found or deal ID mismatch): ops to check the case',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the printer limit of 50 MB',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
+const why={400:'the case reference was not valid',404:'EMR+ could not match this medi ref to this deal (case not found, or the medi ref belongs to another deal): check the medi ref against the patient details',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the printer size limit of '+Number(c.max_report_mb||50)+' MB: print it by hand',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
 const reason=x=>{ const m=String((x&&x.errorMessage)||'').match(/\((\d{3})\)/); if(m&&why[m[1]]) return why[m[1]]+' (HTTP '+m[1]+')'; return String((x&&(x.errorMessage||x.errorCode))||'the printer reported a failure').slice(0,160); };
 let kind='results';
 if(!sc) kind='unknown';
@@ -303,13 +303,17 @@ if(sc!==200){
   const n=$runIndex; // 0 = first answer, 1 = after the first retry, ...
   if(sc===429){ if(n<Number(c.emr_retry_429_max||0)) return again(Number(c.emr_retry_429_wait_seconds||60),503,'EMR+ rate limited, retrying'); return bad(503,'EMR+ rate limited (429) after retries'); }
   if(sc===500){ if(n<Number(c.emr_retry_500_max||0)) return again(Number(c.emr_retry_500_wait_seconds||30),502,'EMR+ internal error, retrying'); return bad(502,'EMR+ internal error (500) after retry'); }
+  let said=''; try{ if(it.binary&&it.binary.data){ const eb=(await this.helpers.getBinaryDataBuffer(0,'data')).subarray(0,2000).toString('utf8'); let j=null; try{ j=JSON.parse(eb); }catch(e){} said=String(j?[j.error||j.code||'',j.message||j.detail||''].filter(Boolean).join(': '):eb).replace(/\s+/g,' ').trim().slice(0,160); } }catch(e){}
   const m={400:[400,'invalid case reference or missing deal id'],401:[403,'EMR+ refused access'],403:[403,'EMR+ refused access'],404:[404,'case not found or deal id mismatch'],409:[409,'report not completed, not available or too large']};
-  const x=m[sc]||(sc>=500?[502,'EMR+ error']:[502,'unexpected EMR+ answer']); return bad(x[0],x[1]);
+  const x=m[sc]||(sc>=500?[502,'EMR+ error']:[502,'unexpected EMR+ answer']); return bad(x[0],x[1]+(said?' - EMR+ said: '+said:''));
 }
 if(!it.binary||!it.binary.data) return bad(502,'EMR+ sent no file');
+const maxMb=Number(c.max_report_mb||50); const maxB=maxMb*1024*1024;
+const hl=Number(((r.headers||{})['content-length'])||0);
+if(hl>maxB) return bad(413,'report is '+(hl/1048576).toFixed(1)+' MB, over the printer limit of '+maxMb+' MB');
 const buf=await this.helpers.getBinaryDataBuffer(0,'data');
 if(buf.length<6||buf.subarray(0,5).toString()!=='%PDF-') return bad(502,'EMR+ did not send a PDF');
-if(buf.length>50*1024*1024) return bad(413,'report over the printer limit of 50 MB');
+if(buf.length>maxB) return bad(413,'report is '+(buf.length/1048576).toFixed(1)+' MB, over the printer limit of '+maxMb+' MB');
 return [{json:{ok:true,retry:false},binary:{data:it.binary.data}}];`;
 
 module.exports = CODE;

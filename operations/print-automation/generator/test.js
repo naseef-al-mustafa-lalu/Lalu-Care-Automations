@@ -168,6 +168,10 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok((await cr({ error: { message: 'getaddrinfo ENOTFOUND REPLACE_EMR_HOST' } }))[0].json.status === 503, 'placeholder host / no answer -> 503');
   ok((await cr({ statusCode: 200 }, { data: { data: b64('<html>') } }))[0].json.status === 502, 'non-PDF -> 502');
   ok((await cr({ statusCode: 200 }))[0].json.status === 502, 'no file -> 502');
+  { const m = (await cr({ statusCode: 404 }, { data: { data: b64(JSON.stringify({ error: 'hubspot_deal_id_mismatch', message: 'medi ref is not linked to this deal' })) } }))[0].json.msg;
+    ok(/EMR\+ said: hubspot_deal_id_mismatch: medi ref is not linked to this deal/.test(m), 'EMR+ error text is passed on'); }
+  ok(/MB, over the printer limit of 50 MB/.test((await cr({ statusCode: 200, headers: { 'content-length': String(60 * 1048576) } }, { data: pdfBin }))[0].json.msg), 'size header over the limit -> 413 before download');
+  { const s = await run('Check report', { input: [mkitem({ statusCode: 200 }, { data: pdfBin })], cfgOverride: { ...real, max_report_mb: 0.00001 } }); ok(s[0].json.status === 413, 'limit comes from Config max_report_mb'); }
 
   // ---- gateway answer handling
   const meta = { pack_ref: pack.submission_ref, manifest_job_id: pack.submission_ref + '-M', cases: pack.cases.map(k => ({ deal_id: k.deal_id, job_id: k.job_id, report_type: k.report_type })), started_iso: '2026-11-04T08:30:00.000Z' };
@@ -182,7 +186,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(!o.unsafe && o.jobs_ok === 0 && o.updates.length === meta.cases.length && /not completed, not available or too large in EMR\+/.test(o.updates[0].properties.print_issue) && o.updates[0].properties.print_status === 'needs_attention', '409 -> readable reason');
   const partial = [[meta.manifest_job_id, true], [meta.cases[0].job_id, false, 'x (404) Not Found'], ...meta.cases.slice(1).map(k => [k.job_id, true])];
   o = (await oc({ statusCode: 200, body: { batchStatus: 'partial', jobsFailed: 1, results: res(...partial) } }))[0].json;
-  ok(!o.unsafe && o.updates.length === 1 && o.updates[0].id === meta.cases[0].deal_id && /no matching case/.test(o.updates[0].properties.print_issue) && o.handoff.length === meta.cases.length - 1, 'one failed, rest printed');
+  ok(!o.unsafe && o.updates.length === 1 && o.updates[0].id === meta.cases[0].deal_id && /could not match this medi ref/.test(o.updates[0].properties.print_issue) && o.handoff.length === meta.cases.length - 1, 'one failed, rest printed');
   o = (await oc({ statusCode: 200, body: { batchStatus: 'partial', jobsFailed: 1, results: res([meta.manifest_job_id, false, 'x (500) boom'], ...meta.cases.map(k => [k.job_id, true])) } }))[0].json;
   ok(o.handoff.length === 0 && o.updates.length === meta.cases.length && o.updates.every(u => u.properties.print_status === 'printed' && u.properties.dispatch_hold_printing === 'true' && /manifest sheet did not print/.test(u.properties.print_issue)), 'manifest failed: printed but held with an issue');
   o = (await oc({ statusCode: 200, body: { batchStatus: 'failed', jobsFailed: allIds.length, results: allIds.map(id => ({ jobId: id, status: 'failed', errorCode: 'PRINT_JOB_FAILED', errorMessage: '(403) forbidden' })) } }))[0].json; ok(o.all_failed_403, 'all 403 detected');

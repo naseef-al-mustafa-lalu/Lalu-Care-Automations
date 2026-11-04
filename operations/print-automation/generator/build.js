@@ -15,6 +15,7 @@ const cfg = {
   emr_retry_500_wait_seconds: 30,
   emr_retry_500_max: 1,
   link_secret: 'REPLACE_LINK_SECRET',
+  max_report_mb: 50,
   link_valid_minutes: 30,
   reports_per_call: 24,
   max_reports_per_day: 200,
