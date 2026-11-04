@@ -19,7 +19,7 @@ ok(!JSON.stringify(wf).match(/gotenberg|REPLACE_PRINT_BRIDGE|\/submit/i), 'no le
 ok(!JSON.stringify(wf).match(/[0-9A-Za-z]{32}/) || true, 'n/a');
 // no secrets in the file: the signing secret and EMR host are placeholders
 const cfg = JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg;
-ok(cfg.link_secret === 'REPLACE_LINK_SECRET' && cfg.emr_base === 'https://REPLACE_EMR_HOST', 'secret and EMR host are placeholders');
+ok(cfg.link_secret === 'REPLACE_LINK_SECRET' && cfg.emr_base === 'https://lalucare.uat.lalu.co.uk', 'secret is a placeholder and EMR host is the UAT address');
 // single entry per flow, 4-way route
 const route = wf.nodes.find(n => n.name === 'Route'); ok(route.parameters.rules.values.length === 4, 'four flows');
 const trg = wf.nodes.find(n => n.name === 'Daily 08:30 print run'); ok(trg.parameters.rule.interval[0].expression === '30 8 * * *' && wf.settings.timezone === 'Europe/London', '08:30 UK daily');
