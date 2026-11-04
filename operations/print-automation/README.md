@@ -52,7 +52,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 
 ## Set up (in this order)
 1. HubSpot: properties and stages already exist (see Config). Create a HubSpot workflow that sets Print status = Queued, Print queued at and Dispatch hold - printing = Yes when a deal first enters an awaiting-printing stage, and a HubSpot private app (Settings > Integrations > Private apps, scope `crm.objects.deals.read`) with a webhook subscription `deal.propertyChange` on `print_action`, target `https://automation.lalu.co.uk/webhook/lalu-print-action`. (Workflow "Send a webhook" needs Operations Hub Professional, which is not available.)
-2. Import `Lalu_Print_Main.json` and `Lalu_Print_Error_Alert.json`. Bind credentials (above). In Config set `link_secret`. Leave `emr_base` as the placeholder until EMR+ is ready.
+2. Import `Lalu_Print_Main.json` and `Lalu_Print_Error_Alert.json`. Bind credentials (above). In Config set `link_secret`. `emr_base` is set to the UAT host (https://lalucare.uat.lalu.co.uk) for sandbox testing; change it for production.
 3. **Test with dummy reports** (no EMR+ needed): set `emr_mode` to `dummy`, point HubSpot at the sandbox, queue a few sandbox deals, publish the workflow (the report link must be live for the gateway to fetch it), run "Manual print run". Pages are labelled DUMMY REPORT.
 4. When EMR+ is ready: set `emr_base`, bind the EMR+ credential, set `emr_mode` to `live`, test with real PIP / UC / HAA cases (wrong deal ID, not completed, bad key, wrong IP).
 5. Set Error workflow = "Lalu Print - Error alert" in the Main workflow settings. Replace `REPLACE_FROM_EMAIL` / `REPLACE_OPS_EMAIL`.

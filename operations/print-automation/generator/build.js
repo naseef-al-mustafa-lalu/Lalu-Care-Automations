@@ -9,7 +9,7 @@ const cfg = {
   gateway_base: 'http://10.0.60.33:8787',
   printer_queue: 'CRD-PRN-01-AUTO',
   emr_mode: 'live',
-  emr_base: 'https://REPLACE_EMR_HOST',
+  emr_base: 'https://lalucare.uat.lalu.co.uk',
   emr_retry_429_wait_seconds: 60,
   emr_retry_429_max: 2,
   emr_retry_500_wait_seconds: 30,
