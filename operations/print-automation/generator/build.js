@@ -18,7 +18,7 @@ const cfg = {
   dry_run: true,
   max_report_mb: 150,
   // Known destinations: a deal whose destination_address contains any text in match (compared ignoring case, punctuation and spacing) is printed to canonical. Same recipient written two ways then shares one batch.
-  bank_holidays: [], // dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
+  bank_holidays: ['2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'], // England and Wales; dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   destinations: [],
   require_known_destination: false,
   link_valid_minutes: 30,
