@@ -178,3 +178,29 @@ Run in the sandbox with dry run on unless marked live. Live tests print real pap
 - EMR+ 403, 429, 500; gateway reachable from 34.142.83.45; execution data holds no PDF content.
 - SMTP alerts and summary email or saved view; weekday schedule and bank-holiday skip, once agreed.
 - Repeat in the ops portal; rotate the pilot gateway token before production.
+
+## Appendix A: Summary email template
+
+Sent after each run (and when nothing printed) to the print team. Fields in curly brackets are filled by n8n. Not built yet: needs the SMTP credential.
+
+```
+Subject: Lalu print run {run_date}: {printed_count} printed, {attention_count} need attention
+
+Hi team,
+
+The {run_time} print run has finished.
+
+Printed: {printed_count} reports to {destination_count} destinations (batch {batch_id}).
+Need attention: {attention_count}
+{for each deal: case reference (mediref) | report type | destination | reason from Print issue | link to the deal}
+Still queued for the next run: {queued_count}
+
+What to do: open the saved HubSpot view "Print - Needs attention". Fix the cause, then set Print action to Print / reprint, or print by hand and set Print action to Printed manually with a note.
+Where a result is unknown, check the printer output and queue before using Print / reprint. Nothing is ever resent automatically.
+
+Sent by the Lalu print automation (n8n). Please do not reply to this email.
+```
+
+## Appendix B: Saved HubSpot view
+
+Deal view "Print - Needs attention": filter Print status is any of Needs attention. Created in the sandbox portal (147702827). Repeat in the ops portal (6373960) at go-live.
