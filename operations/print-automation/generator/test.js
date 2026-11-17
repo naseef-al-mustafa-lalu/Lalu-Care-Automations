@@ -171,7 +171,9 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok((await cr({ statusCode: 200 }))[0].json.status === 502, 'no file -> 502');
   { const m = (await cr({ statusCode: 404 }, { data: { data: b64(JSON.stringify({ error: 'hubspot_deal_id_mismatch', message: 'medi ref is not linked to this deal' })) } }))[0].json.msg;
     ok(/EMR\+ said: hubspot_deal_id_mismatch: medi ref is not linked to this deal/.test(m), 'EMR+ error text is passed on'); }
-  ok(/MB, over the printer limit of 50 MB/.test((await cr({ statusCode: 200, headers: { 'content-length': String(60 * 1048576) } }, { data: pdfBin }))[0].json.msg), 'size header over the limit -> 413 before download');
+  ok(/MB, over the limit of 150 MB/.test((await cr({ statusCode: 200, headers: { 'content-length': String(150000001) } }, { data: pdfBin }))[0].json.msg), 'size header over 150 MB (decimal) -> 413 before download');
+  ok((await cr({ statusCode: 200, headers: { 'content-length': String(149999999) } }, { data: pdfBin }))[0].json.ok === true, 'size header just under 150 MB passes');
+  ok(real.max_report_mb === 150, 'Config limit is 150 MB');
   { const s = await run('Check report', { input: [mkitem({ statusCode: 200 }, { data: pdfBin })], cfgOverride: { ...real, max_report_mb: 0.00001 } }); ok(s[0].json.status === 413, 'limit comes from Config max_report_mb'); }
 
   { const d = { ...real, dry_run: true }; const r1 = await run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: d });
@@ -207,6 +209,9 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   o = (await oc({ statusCode: 200, body: { accepted: true, batchStatus: 'completed', jobsFailed: 0 } }))[0].json; ok(!o.unsafe && o.handoff.length === meta.cases.length, 'batch-level success without per-job results');
   o = (await oc({ statusCode: 200, body: { batchStatus: 'failed', jobsFailed: allIds.length, results: allIds.map(id => ({ jobId: id, status: 'failed', errorCode: 'PRINT_JOB_FAILED', errorMessage: '(409) Conflict' })) } }))[0].json;
   ok(!o.unsafe && o.jobs_ok === 0 && o.updates.length === meta.cases.length && /not completed, not available or too large in EMR\+/.test(o.updates[0].properties.print_issue) && o.updates[0].properties.print_status === 'needs_attention', '409 -> readable reason');
+  { const big = [[meta.manifest_job_id, true], [meta.cases[0].job_id, false, 'file too large (413) Payload Too Large'], ...meta.cases.slice(1).map(k => [k.job_id, true])];
+    const ob = (await oc({ statusCode: 200, body: { accepted: true, batchStatus: 'partial', jobsFailed: 1, results: res(...big) } }))[0].json;
+    ok(ob.updates.length === 1 && ob.updates[0].id === meta.cases[0].deal_id && ob.updates[0].properties.print_status === 'needs_attention' && /size limit of 150 MB \(HTTP 413\)\. Fix the cause and use Print \/ reprint, or print it by hand and set Print action to Printed manually\./.test(ob.updates[0].properties.print_issue) && ob.handoff.length === meta.cases.length - 1, 'one report over the limit: only that deal needs attention, others hand off, message says what staff do next'); }
   const partial = [[meta.manifest_job_id, true], [meta.cases[0].job_id, false, 'x (404) Not Found'], ...meta.cases.slice(1).map(k => [k.job_id, true])];
   o = (await oc({ statusCode: 200, body: { batchStatus: 'partial', jobsFailed: 1, results: res(...partial) } }))[0].json;
   ok(!o.unsafe && o.updates.length === 1 && o.updates[0].id === meta.cases[0].deal_id && /could not match this medi ref/.test(o.updates[0].properties.print_issue) && o.handoff.length === meta.cases.length - 1, 'one failed, rest printed');
@@ -249,6 +254,17 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   s = await stf({ print_action: 'print_reprint', print_request_note: 'jam', print_status: 'needs_attention' }); ok(s[0].json.properties.print_status === 'queued' && s[0].json.properties.print_batch_id === '' && s[0].json.properties.print_completed_at === '' && s[0].json.properties.dispatch_hold_printing === 'true' && s[0].json.properties.print_action === 'none', 'reprint requeues');
   s = await stf({ print_action: 'print_reprint', print_request_note: 'x', print_status: 'printed', dealstage: 'S_CANC' }); ok(/cancelled/.test(s[0].json.properties.print_request_note), 'cancelled deal');
   s = await stf({ print_action: 'print_reprint', print_request_note: 'REJECTED: old', print_status: 'printed' }); ok(/REJECTED: write a new/.test(s[0].json.properties.print_request_note), 'stale rejected note not reusable');
+  // Printed manually: staff printed the report by hand, so there is no printer job to confirm
+  s = await stf({ print_action: 'printed_manually', print_request_note: '', print_status: 'needs_attention' }); ok(/^REJECTED/.test(s[0].json.properties.print_request_note), 'manual print needs a note');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'Too large, printed from EMR+', print_status: 'needs_attention', print_issue: 'report too large', dispatch_hold_printing: 'true' });
+  ok(s[0].json.properties.print_status === 'printed' && s[0].json.properties.dispatch_hold_printing === 'false' && s[0].json.properties.print_issue === '' && s[0].json.properties.dealstage === 'S_INV' && s[0].json.properties.print_action === 'none' && s[0].json.properties.printer_job_reference === 'Manual' && !!s[0].json.properties.print_completed_at, 'manual print marks Printed, clears the hold and applies the stage move (PIP)');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'printed by hand', print_status: 'needs_attention', report_type: 'UC&ESA' }); ok(s[0].json.properties.dealstage === 'S_SEND', 'manual print applies the UC stage move (To be sent)');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'x', print_status: 'needs_attention', printer_job_reference: 'JOB-9' }); ok(!('printer_job_reference' in s[0].json.properties), 'existing job reference is kept');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'x', print_status: 'queued' }); ok(s[0].json.properties.print_status === 'printed', 'manual print also takes a queued case out of the queue');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'x', print_status: 'preparing' }); ok(/REJECTED.*may still be active/.test(s[0].json.properties.print_request_note), 'manual print blocked while a job is active');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'x', print_status: 'sent_to_printer' }); ok(/REJECTED/.test(s[0].json.properties.print_request_note), 'manual print blocked while sent to printer');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'x', print_status: 'printed' }); ok(/already marked Printed/.test(s[0].json.properties.print_request_note), 'manual print refused when already Printed');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'x', print_status: 'needs_attention', dealstage: 'S_CANC' }); ok(/cancelled/.test(s[0].json.properties.print_request_note), 'manual print refused on a cancelled deal');
   await throws(run('Read staff request', { nodes: { __body: { deal_id: 'abc' } } }), /STAFF_REQUEST_INVALID/);
   ok((await run('Read staff request', { nodes: { __body: { deal_id: '123' } } }))[0].json.deal_id === '123', 'deal id read');
   const ev = (id, v, name = 'print_action', type = 'deal.propertyChange') => ({ objectId: id, propertyName: name, propertyValue: v, subscriptionType: type });

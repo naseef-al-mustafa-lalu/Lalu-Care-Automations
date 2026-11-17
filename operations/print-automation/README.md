@@ -18,7 +18,7 @@ Files in `n8n/`:
 2. For each call, n8n signs one link per PDF (the manifest first, then each report) and sends **one** `POST /print-jobs` to the gateway with those links. It reads the per-job results from the same response and writes HubSpot: Printed (hold cleared, existing stage handoff only if the deal is still at an awaiting-printing stage) or Needs attention with a readable reason.
 3. **Report link** (the gateway calls this). The gateway opens each link. n8n checks the signature and expiry, then either builds the manifest PDF itself (plain PDF, no external tool) or fetches that one report from EMR+ and streams it straight back. Nothing is saved.
 4. **Stuck check** (every 15 min). If n8n restarted mid-run, deals left Preparing for `preparing_timeout_minutes` become Needs attention.
-5. **Staff actions** (HubSpot webhook). Report problem / Resolve problem / Print / reprint, validated against the deal record. No printer call is needed.
+5. **Staff actions** (HubSpot webhook). Report problem / Resolve problem / Print / reprint / Printed manually (note required), validated against the deal record. No printer call is needed.
 
 HubSpot is the only state store. There are no Data Tables.
 
@@ -36,7 +36,7 @@ One per call, printed first: batch ID, print call and part (for example part 2 o
 | Timeout / no answer / 5xx | Needs attention, "result unknown" | stops, alert. **Never resent automatically** |
 | Every report refused by EMR+ (403) | Needs attention | stops, alert |
 
-EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching case, 409 not completed / not available / too large, 403 key or IP refused, 410 link expired, 422 bad link, 413 over 50 MB, 503 rate limited / unreachable / not configured, 502 other.
+EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching case, 409 not completed / not available / too large, 403 key or IP refused, 410 link expired, 422 bad link, 413 over 150 MB, 503 rate limited / unreachable / not configured, 502 other.
 
 **EMR+ retries (agreed with Emily, 4 Nov):** 429 (throttled): wait 60 s and retry, up to 2 times (`emr_retry_429_*`). 500 (internal error): wait 30 s and retry once (`emr_retry_500_*`); if it persists the deal shows the reason and Emily checks Sentry. 403 (key or IP): not retried, tell Naseef. 400, 404, 409: not retried, ops review manually. The retry happens inside the report-link flow while the gateway waits, so the gateway's download timeout is still to be tested.
 
@@ -65,7 +65,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 - `preparing_timeout_minutes` (default 60).
 
 ## Cardiff print gateway (CRD-PRINT-GW01, 10.0.60.33:8787)
-- `GET /health` returns `status`, `spoolerStatus`, `printerQueue`, `printerStatus`. `POST /print-jobs` takes JSON with a `documentUrl` per job that the gateway downloads itself. Header `X-Print-Agent-Token`. PDF only, 50 MB per file, 25 jobs per call, 5 copies, queue `CRD-PRN-01-AUTO` only.
+- `GET /health` returns `status`, `spoolerStatus`, `printerQueue`, `printerStatus`. `POST /print-jobs` takes JSON with a `documentUrl` per job that the gateway downloads itself. Header `X-Print-Agent-Token`. PDF only, 150 MB per file, 25 jobs per call, 5 copies, queue `CRD-PRN-01-AUTO` only.
 - n8n runs on Google Cloud (34.142.83.45) and cannot reach private addresses by default. 10.0.60.33 works.
 - Jobs are processed in order, one at a time. About 6 s per job after IT's fix on 3 Nov (it was about 126 s).
 - Failures return HTTP 200 with `batchStatus: failed`, `jobsFailed` and `results[].errorCode`. A call can time out and still print, so a timeout is "result unknown", never "failed".

@@ -98,7 +98,7 @@ After successful printing with no open issue:
 | Property | Use |
 |---|---|
 | Print status | Queued, Preparing, Sent to printer, Printed, Needs attention |
-| Print action | None, Report problem, Resolve problem, Print / reprint. Staff set it with a Print request note; n8n processes it and resets to None. |
+| Print action | None, Report problem, Resolve problem, Print / reprint, Printed manually. Staff set it with a Print request note; n8n processes it and resets to None. |
 | Dispatch hold - printing | Yes from queue entry until successful printing with no open issue |
 | Print queued at, Print batch ID, Print destination, Printer job reference, Print submitted at, Print completed at, Print issue, Print request note | Timing, batch link, destination used, job reference, and the reason for any problem |
 
@@ -107,6 +107,7 @@ After successful printing with no open issue:
 - **Report problem:** staff set the Print action property to Report problem and add a Print request note. n8n then sets Print status = Needs attention and Dispatch hold - printing = Yes, copies the problem into Print issue, and resets Print action to None. The deal stays in its current pipeline stage.
 - **Resolve problem:** staff set the Print action property to Resolve problem and add a Print request note describing the fix. If the earlier job has a successful result, n8n sets Print status = Printed, sets Dispatch hold - printing = No, clears Print issue, and applies the normal stage handoff (UC/HSA to To be sent, PIP to PIP Awaiting Invoicing). If not, Print status stays "Needs attention" and the hold stays Yes. Print action is reset to None.
 - **Print / reprint:** staff first check the printer output, then set the Print action property to Print / reprint and add a Print request note giving the reason. n8n sets Print status = Queued and Dispatch hold - printing = Yes, and the case joins the next scheduled run with a new batch ID. The request is refused if an earlier job is still active or its result is unknown. Print action is reset to None.
+- **Printed manually:** if staff print a report by hand, they set Print action to Printed manually and add a Print request note (required). n8n sets Print status = Printed, Dispatch hold - printing = No, clears Print issue, records the completion time with job reference "Manual", and applies the normal stage handoff. Refused while Preparing or Sent to printer, or if already Printed or cancelled. Print action is reset to None.
 
 ## 8. Error catching and recovery
 
@@ -118,7 +119,7 @@ After successful printing with no open issue:
 | What goes wrong | What the deal shows | What happens next |
 |---|---|---|
 | Printer not ready at 08:30 (health check fails) | Stays Queued | Nothing is sent and the team is alerted. The cases are picked up at the next run. |
-| Gateway rejects the call (wrong or missing token, more than 25 jobs, file over 50 MB, not a PDF) | Needs attention, reason in Print issue | Nothing prints. Fix the cause, then use Print / reprint. |
+| Gateway rejects the call (wrong or missing token, more than 25 jobs, report over 150 MB, not a PDF) | Needs attention, reason in Print issue | Nothing prints. Fix the cause, then use Print / reprint. |
 | A report cannot be fetched from EMR+ (400, 404 or 409: case or deal ID mismatch, not completed, report not available, report too large) | Needs attention, reason in Print issue | The gateway reports that job as failed. The manifest already lists the case, so staff are told which report is missing. Whether later jobs still print is to be confirmed in the pilot. Reprint once fixed. |
 | EMR+ rejects the key or IP address (403) | Needs attention on the affected cases | The run stops and the team is alerted. Fix the key or the IP allow-list, then reprint. Tell Naseef: this is a credentials issue. |
 | EMR+ rate limit or server error (429, 500) | Needs attention if it continues | 429: n8n waits 60 seconds and retries up to twice. 500: n8n waits 30 seconds and retries once. If it still fails the job fails as above: for 429 try again later, for 500 ask Emily to check Sentry. |
@@ -160,3 +161,20 @@ After successful printing with no open issue:
 
 - Lalu Print Automation: Daily run: https://miro.com/app/board/uXjVESTWxTc=/?moveToWidget=3458764689318601613&cot=14
 - Lalu Print Automation: Staff actions: https://miro.com/app/board/uXjVESTWxTc=/?moveToWidget=3458764689318601611&cot=14
+
+## 11. Test program
+
+Run in the sandbox with dry run on unless marked live. Live tests print real paper and are run with IT on the Cardiff queue.
+
+- Skip and continue (live): three deals to one destination, middle one with a wrong mediref. Pass: the other two print, the middle one is Needs attention, manifest lists all three.
+- Timeout (live): pause the print queue. Pass: Needs attention "result unknown", nothing resent.
+- Report too large: force 409/413 or use a report over 150 MB. Pass: only that deal is flagged.
+- Gateway fails per job, not per call (confirm with Jade).
+- Same 150 MB definition (bytes) at EMR+ and the gateway (Jade, Emily).
+- n8n stream limit: stream a report near 150 MB through n8n. Pass: no out-of-memory error or restart; otherwise lower the limit.
+- Wrong checksum and duplicate job ID (live); paper jam, out of paper, toner (live).
+- Printed manually in the sandbox: refused without a note and in blocked states; otherwise Printed, hold No, stage moves.
+- Statuses and stage moves (not reached in dry run).
+- EMR+ 403, 429, 500; gateway reachable from 34.142.83.45; execution data holds no PDF content.
+- SMTP alerts and summary email or saved view; weekday schedule and bank-holiday skip, once agreed.
+- Repeat in the ops portal; rotate the pilot gateway token before production.

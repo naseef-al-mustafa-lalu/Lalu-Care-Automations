@@ -16,7 +16,7 @@ const cfg = {
   emr_retry_500_max: 1,
   link_secret: 'REPLACE_LINK_SECRET',
   dry_run: true,
-  max_report_mb: 50,
+  max_report_mb: 150,
   link_valid_minutes: 30,
   reports_per_call: 24,
   max_reports_per_day: 200,
@@ -35,7 +35,7 @@ const cfg = {
   },
   values: {
     queued: 'queued', preparing: 'preparing', submitted: 'sent_to_printer', printed: 'printed', issue: 'needs_attention',
-    action_none: 'none', action_problem: 'report_problem', action_resolve: 'resolve_problem', action_print: 'print_reprint'
+    action_none: 'none', action_problem: 'report_problem', action_resolve: 'resolve_problem', action_print: 'print_reprint', action_manual: 'printed_manually'
   },
   report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA' },
   preparing_timeout_minutes: 60

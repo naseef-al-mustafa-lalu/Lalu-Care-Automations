@@ -128,7 +128,7 @@ CODE.print_outcome = String.raw`const c=$('Config').first().json.cfg; const F=c.
 const meta=$('Build print request').first().json.meta;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=(r.body&&typeof r.body==='object')?r.body:{};
 const nowISO=new Date().toISOString();
-const why={400:'the case reference was not valid',404:'EMR+ could not match this medi ref to this deal (case not found, or the medi ref belongs to another deal): check the medi ref against the patient details',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the printer size limit of '+Number(c.max_report_mb||50)+' MB: print it by hand',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
+const why={400:'the case reference was not valid',404:'EMR+ could not match this medi ref to this deal (case not found, or the medi ref belongs to another deal): check the medi ref against the patient details',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the size limit of '+Number(c.max_report_mb||150)+' MB',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
 const reason=x=>{ const m=String((x&&x.errorMessage)||'').match(/\((\d{3})\)/); if(m&&why[m[1]]) return why[m[1]]+' (HTTP '+m[1]+')'; return String((x&&(x.errorMessage||x.errorCode))||'the printer reported a failure').slice(0,160); };
 let kind='results';
 if(!sc) kind='unknown';
@@ -151,7 +151,7 @@ for(const k of meta.cases){
       pr[F.hold]='true'; pr[F.issue]='Printed, but the manifest sheet did not print ('+reason(mf.x)+'). Check the stack, then use Resolve problem.';
     } else {
       failed++; if(/\(403\)/.test(String((j.x&&j.x.errorMessage)||''))) f403++;
-      pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Report not printed: '+reason(j.x)+'. Fix the cause, then use Print / reprint.';
+      pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Report not printed: '+reason(j.x)+'. Fix the cause and use Print / reprint, or print it by hand and set Print action to Printed manually.';
     }
   } else if(kind==='rejected'){
     pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='The print gateway rejected the batch (HTTP '+sc+(b.errorCode?', '+b.errorCode:'')+'). Nothing was printed. Fix the connection, then use Print / reprint.';
@@ -230,6 +230,10 @@ if(action===V.action_problem){
 } else if(action===V.action_resolve){
   if(!p[F.completed_at]) return reject('there is no successful print record on this deal, so the hold stays. Use Print / reprint if another copy is needed');
   pr[F.status]=V.printed; pr[F.issue]=''; pr[F.hold]='false'; handoff(p,pr);
+} else if(action===V.action_manual){
+  if(st===V.preparing||st===V.submitted) return reject('the earlier job may still be active. Check the printer queue and paper output first');
+  if(st===V.printed) return reject('this case is already marked Printed');
+  pr[F.status]=V.printed; pr[F.issue]=''; pr[F.hold]='false'; pr[F.completed_at]=nowISO; if(!p[F.job_ref]) pr[F.job_ref]='Manual'; handoff(p,pr);
 } else if(action===V.action_print){
   if(st===V.preparing||st===V.submitted) return reject('the earlier job may still be active. Check the printer queue and paper output first');
   if(!st||st===V.queued) return reject('this case has not been printed yet or is already queued');
@@ -309,12 +313,12 @@ if(sc!==200){
   const x=m[sc]||(sc>=500?[502,'EMR+ error']:[502,'unexpected EMR+ answer']); return bad(x[0],x[1]+(said?' - EMR+ said: '+said:''));
 }
 if(!it.binary||!it.binary.data) return bad(502,'EMR+ sent no file');
-const maxMb=Number(c.max_report_mb||50); const maxB=maxMb*1024*1024;
+const maxMb=Number(c.max_report_mb||150); const maxB=maxMb*1000000; // decimal MB: the smaller reading of "150 MB", so nothing is passed on that either system could refuse
 const hl=Number(((r.headers||{})['content-length'])||0);
-if(hl>maxB) return bad(413,'report is '+(hl/1048576).toFixed(1)+' MB, over the printer limit of '+maxMb+' MB');
+if(hl>maxB) return bad(413,'report is '+(hl/1000000).toFixed(1)+' MB, over the limit of '+maxMb+' MB');
 const buf=await this.helpers.getBinaryDataBuffer(0,'data');
 if(buf.length<6||buf.subarray(0,5).toString()!=='%PDF-') return bad(502,'EMR+ did not send a PDF');
-if(buf.length>maxB) return bad(413,'report is '+(buf.length/1048576).toFixed(1)+' MB, over the printer limit of '+maxMb+' MB');
+if(buf.length>maxB) return bad(413,'report is '+(buf.length/1000000).toFixed(1)+' MB, over the limit of '+maxMb+' MB');
 return [{json:{ok:true,retry:false},binary:{data:it.binary.data}}];`;
 
 // ---------- dry run: stands in for the print gateway, sends nothing to the printer ----------
