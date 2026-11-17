@@ -97,6 +97,16 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(byId['1'].print_status === 'preparing' && byId['1'].dispatch_hold_printing === 'true' && byId['1'].printer_job_reference === packs[1].cases[0].job_id, 'claim props use the report job id');
   ok(byId['5'].print_status === 'needs_attention' && /Destination address is empty/.test(byId['5'].print_issue), 'empty destination rejected');
   ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /Destination address is empty/.test(byId['8'].print_issue), 'invalid cases explained');
+  // destination standardisation: same recipient written two ways shares one batch; known list maps to the canonical address
+  const sd = (id, addr) => ({ id, properties: { dealstage: 'S_PIP', mediref: '2000' + id, report_type: 'PIP', destination_address: addr } });
+  const stdSel = [mkitem({ deals: [sd(71, 'DWP Leeds,\nPO Box 1, LS1 1AA'), sd(72, 'dwp leeds, po box 1,  LS1  1AA'), sd(73, 'The Old Road Office, M1 2BB'), sd(74, 'Old Rd Office  M1 2BB')] })];
+  const bs = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] } });
+  ok(bs[0].json.packs.length === 2, 'same recipient written two ways shares one batch');
+  const knownCfg = { ...real, destinations: [{ canonical: 'DWP Leeds, PO Box 1, LS1 1AA', match: ['LS1 1AA'] }] };
+  const bk = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: knownCfg });
+  ok(bk[0].json.packs.some(p => p.destination === 'DWP Leeds, PO Box 1, LS1 1AA' && p.cases.length === 2), 'known destination uses the canonical address');
+  const bstrict = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...knownCfg, require_known_destination: true } });
+  ok(bstrict.flatMap(x => x.json.inputs).filter(u => /not in the known destinations/.test(u.properties.print_issue || '')).length === 2, 'strict mode flags unknown destinations');
   const capCfg = { ...real, reports_per_call: 1 };
   const bp2 = await run('Build batches and claim updates', { nodes: bpNodes, cfgOverride: capCfg });
   ok(bp2[0].json.packs.length === 3 && bp2[0].json.packs.filter(p => p.destination === 'DWP Leeds').map(p => p.part + '/' + p.parts).join() === '1/2,2/2', 'per-call cap splits a destination into labelled parts');

@@ -17,6 +17,9 @@ const cfg = {
   link_secret: 'REPLACE_LINK_SECRET',
   dry_run: true,
   max_report_mb: 150,
+  // Known destinations: a deal whose destination_address contains any text in match (compared ignoring case, punctuation and spacing) is printed to canonical. Same recipient written two ways then shares one batch.
+  destinations: [],
+  require_known_destination: false,
   link_valid_minutes: 30,
   reports_per_call: 24,
   max_reports_per_day: 200,

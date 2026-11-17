@@ -63,21 +63,26 @@ const allowance=$('Daily allowance').first().json.allowance;
 const per=Math.max(1,Math.min(24,Number(c.reports_per_call)||24));
 const qt=d=>{ const t=(d.properties||{})[F.queued_at]; const n=/^\d+$/.test(String(t))?Number(t):Date.parse(t); return isNaN(n)?Infinity:n; };
 deals.sort((a,b)=>qt(a)-qt(b));
+const ABB={road:'rd',street:'st',avenue:'ave',lane:'ln',drive:'dr',court:'ct',house:'hse',floor:'fl',centre:'center',department:'dept','&':'and',the:''};
+const normDest=t=>String(t||'').toLowerCase().replace(/[^a-z0-9& ]+/g,' ').split(/\s+/).filter(Boolean).map(w=>ABB[w]===undefined?w:ABB[w]).filter(Boolean).join(' ').replace(/\b([a-z]{1,2}\d[a-z\d]?) (\d[a-z]{2})\b/g,'$1$2');
 const updates=[]; const valid=[];
 for(const d of deals){
   const p=d.properties||{}; const id=String(d.id);
   const mediref=String(p[F.case_ref]||'').trim();
   const type=c.report_types[String(p[F.report_type]||'').trim()];
-  const dest=String(p[F.dest_source]||'').trim();
+  const destRaw=String(p[F.dest_source]||'').trim();
+  const dn=normDest(destRaw); const known=(c.destinations||[]).find(x=>(x.match||[]).some(m=>{ const n=normDest(m); return n&&dn.includes(n); }));
+  const dest=known?String(known.canonical).trim():destRaw.split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean).join(', ');
   let bad='';
   if(!/^\d+$/.test(mediref)) bad='Case reference missing or not numeric';
   else if(!type) bad='Report type not recognised';
   else if(!dest) bad='Destination address is empty on the deal (check the Third party company)';
+  else if(c.require_known_destination&&!known) bad='Destination is not in the known destinations list in Config (add it, or fix the Third party company address)';
   if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; updates.push({id,properties:pr}); }
   else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dest});
 }
 const groups=new Map();
-for(const k of valid){ if(!groups.has(k.destination)) groups.set(k.destination,[]); groups.get(k.destination).push(k); }
+const keyOf=new Map(); for(const k of valid){ const key=normDest(k.destination); if(!keyOf.has(key)) keyOf.set(key,k.destination); k.destination=keyOf.get(key); if(!groups.has(k.destination)) groups.set(k.destination,[]); groups.get(k.destination).push(k); }
 const packs=[]; let n=0;
 for(const [destination,items] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]))){
   items.sort((a,b)=>a.mediref.localeCompare(b.mediref));
