@@ -166,18 +166,29 @@ After successful printing with no open issue:
 
 Run in the sandbox with dry run on unless marked live. Live tests print real paper and are run with IT on the Cardiff queue.
 
-- Skip and continue (live): three deals to one destination, middle one with a wrong mediref. Pass: the other two print, the middle one is Needs attention, manifest lists all three.
-- Timeout (live): pause the print queue. Pass: Needs attention "result unknown", nothing resent.
-- Report too large: force 409/413 or use a report over 150 MB. Pass: only that deal is flagged.
-- Gateway fails per job, not per call (confirm with Jade).
-- Same 150 MB definition (bytes) at EMR+ and the gateway (Jade, Emily).
-- n8n stream limit: stream a report near 150 MB through n8n. Pass: no out-of-memory error or restart; otherwise lower the limit.
-- Wrong checksum and duplicate job ID (live); paper jam, out of paper, toner (live).
-- Printed manually in the sandbox: refused without a note and in blocked states; otherwise Printed, hold No, stage moves.
-- Statuses and stage moves (not reached in dry run).
-- EMR+ 403, 429, 500; gateway reachable from 34.142.83.45; execution data holds no PDF content.
-- SMTP alerts and summary email or saved view; weekday schedule and bank-holiday skip, once agreed.
-- Repeat in the ops portal; rotate the pilot gateway token before production.
+| Test | How to run it | Pass when | Where |
+|---|---|---|---|
+| Skip and continue | Three deals to one destination, the middle one with a wrong mediref | The other two print; the middle deal is Needs attention with the EMR+ reason; the manifest lists all three | Live print |
+| Timeout | Pause the Cardiff print queue so the call times out | Deals go to Needs attention with "result unknown", nothing is resent, and Print / reprint is refused until staff confirm the output | Live print |
+| Report too large | Force a 409 or 413, or use a report over 150 MB | Only that deal is Needs attention with the size reason; the others print | Sandbox |
+| Gateway fails per job, not per call | Confirm with Jade that an oversized job fails alone | The rest of the call still prints | With IT |
+| Same 150 MB definition | Confirm with Jade and Emily that EMR+ and the gateway both count bytes | Both confirm bytes | With IT |
+| n8n stream limit | Stream a report close to 150 MB through n8n, which holds each report in memory while it streams | Completes with no out-of-memory error or restart. If it fails, lower the limit in Config or raise the n8n memory, keeping the EMR+ and gateway limits in step | Live print |
+| Wrong checksum and duplicate job ID | Send a job with a wrong checksum, then one with a duplicate job ID | Treated as a failed job and the deal is flagged | Live print |
+| Paper jam, out of paper, toner | Cause each condition on the printer | The printer status stops the next run and cases stay Queued | Live print |
+| Printed manually | Try it without a note, with a note, while Preparing or Sent to printer, and when already Printed | Refused without a note and in the blocked states; otherwise Print status = Printed, hold = No, stage moves | Sandbox |
+| Statuses and stage moves | Dry run does not reach Sent to printer, Printed or the stage handoff, so use a real test print or set the values by hand | UC/HSA moves to To be sent and PIP to PIP Awaiting Invoicing; a stage staff already changed is not overwritten | Sandbox |
+| EMR+ errors | 403 (key or IP allow-list), 429 and 500 retries | Behaviour matches the failure table | Sandbox |
+| Network | Gateway fetches report links from n8n; EMR+ accepts the n8n address | Done in testing | Done |
+| Execution data | Confirm n8n execution data does not keep PDF content (see the tracker for the 25 November change) | No PDF content is kept | n8n settings |
+| Alerts and summary | Put the SMTP credential in place, then run the summary email and the saved HubSpot view | The email arrives with the template content and the view lists Needs attention deals | Sandbox |
+| Weekday schedule | A scheduled run on a date in bank_holidays, then a manual run on the same date | The scheduled run ends quietly and the manual run goes ahead; no scheduled run on a weekend | Sandbox |
+| Ops portal repeat | Repeat the HubSpot checks in the ops portal: properties, stages, Third party association label, destination_address, then the HubSpot credential and hubspot_base | Same results as the sandbox | Ops portal |
+| Destination matching | Queue deals with the same recipient written two ways, then add a known-list entry | One batch with the canonical address; with require_known_destination on, an unknown address goes to Needs attention | Sandbox |
+| Hand-print fallback | Hand-print a Queued test case | Without recording it a dry run picks it up again; after Printed manually with a note it does not | Sandbox |
+| Report type values | Compare the report type values on the ops portal with the Config mapping | They match | Ops portal |
+
+Rotate the pilot gateway token before production.
 
 ## Appendix A: Summary email template
 
