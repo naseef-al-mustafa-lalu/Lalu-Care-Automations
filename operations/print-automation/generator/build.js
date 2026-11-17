@@ -18,6 +18,7 @@ const cfg = {
   dry_run: true,
   max_report_mb: 150,
   // Known destinations: a deal whose destination_address contains any text in match (compared ignoring case, punctuation and spacing) is printed to canonical. Same recipient written two ways then shares one batch.
+  bank_holidays: [], // dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   destinations: [],
   require_known_destination: false,
   link_valid_minutes: 30,
@@ -68,16 +69,16 @@ const hsPost = (name, path, bodyExpr, pos, extraOpts = {}, extra = retry) => add
 const flowSet = (name, flow, pos) => add(name, 'n8n-nodes-base.set', 3.4, { assignments: { assignments: [{ id: uid(), name: 'flow', value: flow, type: 'string' }] }, includeOtherFields: true, options: {} }, pos);
 
 // ---------- triggers + config + routing ----------
-note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (daily 08:30 UK or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.', [0, -420], 600, 200);
-add('Daily 08:30 print run', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '30 8 * * *' }] } }, [0, 0]);
+note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (Mon–Fri 08:30 UK, skipping bank_holidays, or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.', [0, -420], 600, 200);
+add('Weekday 08:30 print run', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '30 8 * * 1-5' }] } }, [0, 0]);
 add('Manual print run', 'n8n-nodes-base.manualTrigger', 1, {}, [0, 120]);
 add('Every 15 min stuck check', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'minutes', minutesInterval: 15 }] } }, [0, 300]);
 add('Staff action webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'POST', path: 'lalu-print-action', responseMode: 'onReceived', options: {} }, [0, 480], { notes: 'Target of a HubSpot private app webhook subscription: deal.propertyChange on print_action (event batches are accepted). No credential: HubSpot cannot send a custom header, and the flow trusts nothing in the payload except the deal ID. It re-reads the deal and acts only on what the deal record says. Also accepts {"deal_id": "..."}. Replies 200 immediately.', notesInFlow: true });
 add('Report link webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'GET', path: 'lalu-report', responseMode: 'responseNode', options: {} }, [0, 660], { notes: 'Called by the Cardiff print gateway, not by people. Public by design: every link is signed and expires. Use the PRODUCTION url (https://automation.lalu.co.uk/webhook/lalu-report).', notesInFlow: true });
-flowSet('Flow: print', 'print', [220, 60]); flowSet('Flow: stuck', 'stuck', [220, 300]); flowSet('Flow: staff', 'staff', [220, 480]); flowSet('Flow: link', 'link', [220, 660]);
-link('Daily 08:30 print run', 'Flow: print'); link('Manual print run', 'Flow: print'); link('Every 15 min stuck check', 'Flow: stuck'); link('Staff action webhook', 'Flow: staff'); link('Report link webhook', 'Flow: link');
+flowSet('Flow: print', 'print', [220, 120]); add('Flow: print scheduled', 'n8n-nodes-base.set', 3.4, { assignments: { assignments: [{ id: uid(), name: 'flow', value: 'print', type: 'string' }, { id: uid(), name: 'scheduled', value: true, type: 'boolean' }] }, includeOtherFields: true, options: {} }, [220, 0]); flowSet('Flow: stuck', 'stuck', [220, 300]); flowSet('Flow: staff', 'staff', [220, 480]); flowSet('Flow: link', 'link', [220, 660]);
+link('Weekday 08:30 print run', 'Flow: print scheduled'); link('Manual print run', 'Flow: print'); link('Every 15 min stuck check', 'Flow: stuck'); link('Staff action webhook', 'Flow: staff'); link('Report link webhook', 'Flow: link');
 add('Config', 'n8n-nodes-base.set', 3.4, { mode: 'raw', jsonOutput: JSON.stringify({ cfg }, null, 2), includeOtherFields: true, options: {} }, [440, 300], { notes: 'ALL settings live here. Replace every REPLACE_ value: link_secret = a long random string (32+ characters). emr_base = EMR+ host (only the Report link flow uses it; leave the placeholder until you have it). emr_mode "dummy" serves clearly labelled dummy PDFs for testing; "live" fetches real reports.', notesInFlow: true });
-['Flow: print', 'Flow: stuck', 'Flow: staff', 'Flow: link'].forEach(f => link(f, 'Config'));
+['Flow: print', 'Flow: print scheduled', 'Flow: stuck', 'Flow: staff', 'Flow: link'].forEach(f => link(f, 'Config'));
 code('Check config', CODE.check_config, [660, 300]);
 add('Route', 'n8n-nodes-base.switch', 3.2, { rules: { values: ['print', 'stuck', 'staff', 'link'].map(k => ({ conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 }, conditions: [{ id: uid(), leftValue: "={{ $('Config').first().json.flow }}", rightValue: k, operator: { type: 'string', operation: 'equals' } }], combinator: 'and' }, renameOutput: true, outputKey: k })) }, options: {} }, [880, 300]);
 chain('Config', 'Check config', 'Route');
@@ -105,7 +106,8 @@ hsPost('Read current stages', '/crm/v3/objects/deals/batch/read', "={{ {properti
 code('Build result updates', CODE.build_result_updates, [4840, 0], 'Stage handoff only if the deal is still at an awaiting-printing stage right now.');
 hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [5060, 0]);
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
-link('Route', 'Guard: any Preparing deals?', 0);
+code('Working day?', CODE.working_day, [880, -120], 'Scheduled runs only: ends quietly on a weekend or a date listed in Config bank_holidays (YYYY-MM-DD). Manual runs always continue.');
+link('Route', 'Working day?', 0); link('Working day?', 'Guard: any Preparing deals?');
 chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
 link('Next batch', 'Build job links', 1);
 chain('Build job links', 'Sign links', 'Build print request');

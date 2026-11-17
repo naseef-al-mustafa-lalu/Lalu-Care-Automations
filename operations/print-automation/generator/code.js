@@ -19,6 +19,14 @@ CODE.stop_if_blocked = String.raw`const n=Number(($input.first().json||{}).total
 if(n>0) throw new Error('PRINT_RUN_BLOCKED: '+n+' deal(s) are still Preparing from an earlier run. The stuck check flags them as Needs attention after the timeout; check the printer queue, then re-run.');
 return [{json:{ok:true}}];`;
 
+CODE.working_day = String.raw`const c=$('Config').first().json.cfg; const it=$input.first();
+if(!it.json.scheduled) return [it];
+const d=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London'}).format(new Date());
+const dow=new Date(d+'T12:00:00Z').getUTCDay();
+if(dow===0||dow===6) return [];
+if((c.bank_holidays||[]).includes(d)) return [];
+return [it];`;
+
 CODE.printer_ready = String.raw`const c=$('Config').first().json.cfg;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=r.body||{};
 const notes=[];
@@ -133,7 +141,7 @@ CODE.print_outcome = String.raw`const c=$('Config').first().json.cfg; const F=c.
 const meta=$('Build print request').first().json.meta;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=(r.body&&typeof r.body==='object')?r.body:{};
 const nowISO=new Date().toISOString();
-const why={400:'the case reference was not valid',404:'EMR+ could not match this medi ref to this deal (case not found, or the medi ref belongs to another deal): check the medi ref against the patient details',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the size limit of '+Number(c.max_report_mb||150)+' MB',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
+const why={400:'the case reference (medi ref) is missing or not valid: correct the medi ref on the deal',404:'EMR+ could not match this medi ref to this deal (wrong medi ref, copied from another case, or the instruction is not linked to this deal\'s submission reference): check the medi ref and submission reference on the deal against the EMR+ instruction and correct them',409:'the report is not completed, not available or too large in EMR+: ops to check',403:'EMR+ refused access (API key or IP address): tell Naseef',410:'the download link expired before the printer used it',413:'the report is over the size limit of '+Number(c.max_report_mb||150)+' MB',422:'the download link was not valid',502:'EMR+ internal error or not a PDF after a retry: ask Emily to check Sentry',503:'EMR+ was rate limited, unreachable or not configured after retries: try again later'};
 const reason=x=>{ const m=String((x&&x.errorMessage)||'').match(/\((\d{3})\)/); if(m&&why[m[1]]) return why[m[1]]+' (HTTP '+m[1]+')'; return String((x&&(x.errorMessage||x.errorCode))||'the printer reported a failure').slice(0,160); };
 let kind='results';
 if(!sc) kind='unknown';
@@ -346,7 +354,7 @@ for(const k of meta.cases){
   const r=res.get(String(k.job_id))||{ok:false,sc:0,size:0,said:'no result'};
   const pr={}; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]='';
   if(r.ok&&mf.ok){ pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.issue]='DRY RUN OK: nothing was sent to the printer. Report fetched from EMR+ ('+mb(r.size)+') and would print to the destination shown. Set dry_run to false in Config to print for real.'; }
-  else { pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='DRY RUN FAILED (nothing was sent to the printer): '+(r.ok?'manifest sheet failed ('+mf.sc+' '+mf.said+')':'report link answered '+r.sc+(r.said?' - '+r.said:''))+'. Fix the cause, then use Print / reprint.'; }
+  else { pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='DRY RUN FAILED (nothing was sent to the printer): '+(r.ok?'manifest sheet failed ('+mf.sc+' '+mf.said+')':'report link answered '+r.sc+(r.said?' - '+r.said:'')+((r.sc===400||r.sc===404)?' (check the medi ref and submission reference on the deal)':''))+'. Fix the cause, then use Print / reprint.'; }
   inputs.push({id:k.deal_id,properties:pr}); lines.push(k.deal_id+': '+pr[F.issue]);
 }
 return [{json:{dry_run:true,pack_ref:meta.pack_ref,inputs,summary:lines}}];`;

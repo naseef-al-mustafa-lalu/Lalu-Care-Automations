@@ -22,7 +22,7 @@ const cfg = JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOu
 ok(cfg.link_secret === 'REPLACE_LINK_SECRET' && cfg.emr_base === 'https://lalucare.uat.lalu.co.uk', 'secret is a placeholder and EMR host is the UAT address');
 // single entry per flow, 4-way route
 const route = wf.nodes.find(n => n.name === 'Route'); ok(route.parameters.rules.values.length === 4, 'four flows');
-const trg = wf.nodes.find(n => n.name === 'Daily 08:30 print run'); ok(trg.parameters.rule.interval[0].expression === '30 8 * * *' && wf.settings.timezone === 'Europe/London', '08:30 UK daily');
+const trg = wf.nodes.find(n => n.name === 'Weekday 08:30 print run'); ok(trg.parameters.rule.interval[0].expression === '30 8 * * 1-5' && wf.settings.timezone === 'Europe/London', '08:30 UK daily');
 ok(wf.nodes.find(n => n.name === 'Submit to gateway').parameters.options.timeout >= 600000, 'long gateway timeout');
 ok(!wf.nodes.find(n => n.name === 'Submit to gateway').retryOnFail, 'no retry on the print call');
 ok(wf.nodes.find(n => n.name === 'Report link webhook').parameters.responseMode === 'responseNode', 'link webhook replies from a node');
@@ -107,6 +107,13 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(bk[0].json.packs.some(p => p.destination === 'DWP Leeds, PO Box 1, LS1 1AA' && p.cases.length === 2), 'known destination uses the canonical address');
   const bstrict = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...knownCfg, require_known_destination: true } });
   ok(bstrict.flatMap(x => x.json.inputs).filter(u => /not in the known destinations/.test(u.properties.print_issue || '')).length === 2, 'strict mode flags unknown destinations');
+  // weekday schedule and bank holidays
+  const todayUK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+  const dowUK = new Date(todayUK + 'T12:00:00Z').getUTCDay();
+  ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [todayUK] } })).length === 0, 'scheduled run skips a bank holiday');
+  ok((await run('Working day?', { input: [mkitem({})], cfgOverride: { ...real, bank_holidays: [todayUK] } })).length === 1, 'manual run ignores bank holidays');
+  ok(((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [] } })).length === 1) === (dowUK >= 1 && dowUK <= 5), 'scheduled run goes ahead only on weekdays');
+  ok(wf.nodes.find(n => n.name === 'Weekday 08:30 print run').parameters.rule.interval[0].expression === '30 8 * * 1-5', 'cron is Monday to Friday');
   const capCfg = { ...real, reports_per_call: 1 };
   const bp2 = await run('Build batches and claim updates', { nodes: bpNodes, cfgOverride: capCfg });
   ok(bp2[0].json.packs.length === 3 && bp2[0].json.packs.filter(p => p.destination === 'DWP Leeds').map(p => p.part + '/' + p.parts).join() === '1/2,2/2', 'per-call cap splits a destination into labelled parts');

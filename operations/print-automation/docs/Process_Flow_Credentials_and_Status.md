@@ -214,3 +214,10 @@ Deal view "Print - Needs attention": filter Print status is any of Needs attenti
 - **Stage moves:** not n8n. In the ops portal the published workflow "eMR+ Fulfillment 1 - sort deals into stages based on report type" moves deals out of Clinician Signed Off. The sandbox also has an "N8N Trigger" workflow (sets Send to N8N = Yes). There is no such workflow in the ops portal, so it is treated as a sandbox-only experiment; the Lalu Print queue workflow is the one carried over.
 - **Manifest fields:** settled as case reference, report type, destination, number of reports, batch ID, date and time. No claimant names.
 - **Pilot hand-printing limitation:** a Queued case printed by hand and not recorded will print again at 08:30. Set Print action to Printed manually with a note first. Refused once Preparing or Sent to printer.
+
+## 13. Weekday schedule, wrong medi ref, task list (17 November)
+
+- **Schedule:** the scheduled run is Monday to Friday at 08:30 (Europe/London) and skips dates listed in Config `bank_holidays` (YYYY-MM-DD, update each year). A manual run ignores the list. A "Working day?" node does the check.
+- **Wrong medi ref:** a missing or non-numeric medi ref is flagged before queuing. A medi ref that EMR+ cannot match to the deal (wrong, copied from another case, or the instruction is not linked to the deal's submission reference) returns 400 or 404; the Print issue on the deal says what to check and correct, then use Print / reprint. EMR+ only returns a report for an instruction linked to that deal, so a medi ref copied from another case cannot print the wrong report.
+- **Known destinations to confirm (Appendix C of the Google Doc):** Serco, Maximus and Ingeus share one mail unit (WV99 1AH); the other six addresses need standard addresses from the team. One entry ("Centre for Health and Disability Assessments") names no site and cannot be matched.
+- **Open tasks:** kept in Appendix B of the Google Doc (all Incomplete).
