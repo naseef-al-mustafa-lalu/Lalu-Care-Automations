@@ -300,6 +300,8 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const lcfg = JSON.parse(lw.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg;
   ok(lcfg.environment === 'live' && lcfg.report_path === 'lalu-report-ops' && lcfg.dry_run === true, 'ops build: Config is live, own report path, dry run on');
   ok(lw.active === false, 'ops build is inactive');
+  ok(!lnames.includes('Staff: reply 200') && !lnames.includes('Read staff request') && !JSON.stringify(lw.connections).includes('Staff action webhook') && !Object.keys(lw.connections).includes('Staff action webhook'), 'ops build: no leftover webhook nodes or links');
+  const known = new Set(lnames); ok(Object.entries(lw.connections).every(([k, v]) => known.has(k) && v.main.every(o => o.every(t => known.has(t.node)))), 'ops build: every connection points at an existing node');
   const pollCode = lw.nodes.find(n => n.name === 'Staff requests to deals').parameters.jsCode;
   const pollRun = (items) => new Function('$', '$input', pollCode)(() => ({ first: () => ({ json: { cfg: lcfg } }) }), { all: () => items });
   const polled = pollRun([{ json: { results: [{ id: '1', properties: { print_action: 'print_reprint' } }, { id: '2', properties: { print_action: 'none' } }, { id: '3', properties: {} }] } }, { json: { body: { results: [{ id: '1', properties: { print_action: 'print_reprint' } }, { id: '4', properties: { print_action: 'report_problem' } }] } } }]);
