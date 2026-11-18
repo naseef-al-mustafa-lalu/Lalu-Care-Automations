@@ -242,7 +242,8 @@ return [...ids].map(id=>({json:{deal_id:id}}));`;
 
 CODE.decide_staff = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
 ${HELPERS}
-const deal=$input.first().json; const p=deal.properties||{}; const id=String(deal.id);
+const decide=(deal)=>{
+const p=deal.properties||{}; const id=String(deal.id);
 const action=p[F.action]; if(!action||action===V.action_none) return [];
 const note=String(p[F.request_note]||'').trim(); const st=p[F.status];
 const reject=(why)=>{ const pr={}; pr[F.action]=V.action_none; pr[F.request_note]='REJECTED: '+why; return [{json:{deal_id:id,properties:pr}}]; };
@@ -263,7 +264,9 @@ if(action===V.action_problem){
   if(!st||st===V.queued) return reject('this case has not been printed yet or is already queued');
   pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.queued_at]=nowISO; pr[F.issue]=''; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]=''; backToQueue(p,pr);
 } else return reject('unknown Print action');
-return [{json:{deal_id:id,properties:pr}}];`.replace('${HELPERS}', HELPERS);
+return [{json:{deal_id:id,properties:pr}}];
+};
+return $input.all().flatMap(it=>decide(it.json));`.replace('${HELPERS}', HELPERS);
 
 // ------------------------------------------------------------------ report link flow (the gateway calls this)
 CODE.check_link = String.raw`const q=$('Config').first().json.query||{};
