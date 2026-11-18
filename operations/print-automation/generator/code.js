@@ -129,7 +129,7 @@ return items;`;
 CODE.build_print_request = String.raw`const c=$('Config').first().json.cfg;
 const items=$input.all(); const first=items[0].json;
 for(const it of items) if(!it.json.sig||!/^[0-9a-f]{64}$/.test(String(it.json.sig))) throw new Error('LINK_SIGNING_FAILED: could not sign the report links. Nothing was sent to the printer.');
-const base=c.n8n_public_base.replace(/\/$/,'')+'/webhook/lalu-report?';
+const base=c.n8n_public_base.replace(/\/$/,'')+'/webhook/'+(c.report_path||'lalu-report')+'?';
 const jobs=items.map(it=>{ const j=it.json; const q=Object.keys(j.query).map(k=>k+'='+encodeURIComponent(String(j.query[k]))).join('&')+'&s='+j.sig;
   return {jobId:j.job_id,documentUrl:base+q,sha256:'',printerQueue:c.printer_queue,copies:1,paperSize:'A4',colour:!!c.colour,duplex:!!c.duplex}; });
 if(jobs.length>25) throw new Error('BATCH_TOO_LARGE: '+jobs.length+' jobs, the gateway allows 25.');
@@ -227,6 +227,11 @@ for(const e of events){
   if(/^\d+$/.test(id)) ids.add(id);
 }
 if(!ids.size){ if(events.some(e=>e&&e.subscriptionType)) return []; throw new Error('STAFF_REQUEST_INVALID: send a HubSpot webhook event or a body with deal_id'); }
+return [...ids].map(id=>({json:{deal_id:id}}));`;
+
+CODE.poll_requests = String.raw`const c=$('Config').first().json.cfg; const F=c.fields;
+const ids=new Set();
+for(const it of $input.all()){ const b=it.json.body&&it.json.body.results?it.json.body:it.json; for(const d of (b.results||[])){ const a=(d.properties||{})[F.action]; if(a&&a!==c.values.action_none) ids.add(String(d.id)); } }
 return [...ids].map(id=>({json:{deal_id:id}}));`;
 
 CODE.decide_staff = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;

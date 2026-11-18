@@ -2,14 +2,22 @@ const fs = require('fs'); const crypto = require('crypto');
 const CODE = require('./code.js');
 const uid = () => crypto.randomUUID();
 
+// ---------- environment ----------
+// PRINT_ENV=sandbox (default) builds the sandbox workflow; PRINT_ENV=live builds the ops portal workflow:
+// its own report link path (both can sit in one n8n), and staff actions are found by polling (no webhook subscription needed).
+const ENV = process.env.PRINT_ENV === 'live' ? 'live' : 'sandbox';
+const LIVE = ENV === 'live';
+
 // ---------- config (single place) ----------
 const cfg = {
+  environment: ENV,
+  report_path: LIVE ? 'lalu-report-ops' : 'lalu-report',
   hubspot_base: 'https://api.hubapi.com',
   n8n_public_base: 'https://automation.lalu.co.uk',
   gateway_base: 'http://10.0.60.33:8787',
   printer_queue: 'CRD-PRN-01-AUTO',
   emr_mode: 'live',
-  emr_base: 'https://lalucare.uat.lalu.co.uk',
+  emr_base: LIVE ? 'REPLACE_LIVE_EMR_BASE' : 'https://lalucare.uat.lalu.co.uk',
   emr_retry_429_wait_seconds: 60,
   emr_retry_429_max: 2,
   emr_retry_500_wait_seconds: 30,
@@ -73,10 +81,11 @@ note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**
 add('Weekday 08:30 print run', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '30 8 * * 1-5' }] } }, [0, 0]);
 add('Manual print run', 'n8n-nodes-base.manualTrigger', 1, {}, [0, 120]);
 add('Every 15 min stuck check', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'minutes', minutesInterval: 15 }] } }, [0, 300]);
-add('Staff action webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'POST', path: 'lalu-print-action', responseMode: 'responseNode', options: {} }, [0, 480], { notes: 'Target of a HubSpot private app webhook subscription: deal.propertyChange on print_action (event batches are accepted). No credential: HubSpot cannot send a custom header, and the flow trusts nothing in the payload except the deal ID. It re-reads the deal and acts only on what the deal record says. Also accepts {"deal_id": "..."}. Replies 200 immediately.', notesInFlow: true });
-add('Report link webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'GET', path: 'lalu-report', responseMode: 'responseNode', options: {} }, [0, 660], { notes: 'Called by the Cardiff print gateway, not by people. Public by design: every link is signed and expires. Use the PRODUCTION url (https://automation.lalu.co.uk/webhook/lalu-report).', notesInFlow: true });
+if (!LIVE) { add('Staff action webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'POST', path: 'lalu-print-action', responseMode: 'responseNode', options: {} }, [0, 480], { notes: 'Target of a HubSpot private app webhook subscription: deal.propertyChange on print_action (event batches are accepted). No credential: HubSpot cannot send a custom header, and the flow trusts nothing in the payload except the deal ID. It re-reads the deal and acts only on what the deal record says. Also accepts {"deal_id": "..."}. Replies 200 immediately.', notesInFlow: true }); }
+if (LIVE) add('Staff action poll (every minute)', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'minutes', minutesInterval: 1 }] } }, [0, 480], { notes: 'Ops portal: HubSpot has no webhook sender here (no Operations Hub). Every minute this looks for deals whose Print action is not None and runs the same staff-action steps as the sandbox webhook.', notesInFlow: true });
+add('Report link webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'GET', path: cfg.report_path, responseMode: 'responseNode', options: {} }, [0, 660], { notes: 'Called by the Cardiff print gateway, not by people. Public by design: every link is signed and expires. Use the PRODUCTION url (https://automation.lalu.co.uk/webhook/lalu-report).', notesInFlow: true });
 flowSet('Flow: print', 'print', [220, 120]); add('Flow: print scheduled', 'n8n-nodes-base.set', 3.4, { assignments: { assignments: [{ id: uid(), name: 'flow', value: 'print', type: 'string' }, { id: uid(), name: 'scheduled', value: true, type: 'boolean' }] }, includeOtherFields: true, options: {} }, [220, 0]); flowSet('Flow: stuck', 'stuck', [220, 300]); flowSet('Flow: staff', 'staff', [220, 480]); flowSet('Flow: link', 'link', [220, 660]);
-link('Weekday 08:30 print run', 'Flow: print scheduled'); link('Manual print run', 'Flow: print'); link('Every 15 min stuck check', 'Flow: stuck'); link('Staff action webhook', 'Flow: staff'); add('Staff: reply 200', 'n8n-nodes-base.respondToWebhook', 1.1, { respondWith: 'text', responseBody: 'ok', options: { responseCode: 200 } }, [220, 560], { notes: 'Replies 200 to HubSpot straight away, then the staff flow carries on. Needed because the workflow also has Respond to Webhook nodes for the report link flow.', notesInFlow: true }); link('Staff action webhook', 'Staff: reply 200'); link('Report link webhook', 'Flow: link');
+link('Weekday 08:30 print run', 'Flow: print scheduled'); link('Manual print run', 'Flow: print'); link('Every 15 min stuck check', 'Flow: stuck'); link(LIVE ? 'Staff action poll (every minute)' : 'Staff action webhook', 'Flow: staff'); add('Staff: reply 200', 'n8n-nodes-base.respondToWebhook', 1.1, { respondWith: 'text', responseBody: 'ok', options: { responseCode: 200 } }, [220, 560], { notes: 'Replies 200 to HubSpot straight away, then the staff flow carries on. Needed because the workflow also has Respond to Webhook nodes for the report link flow.', notesInFlow: true }); link('Staff action webhook', 'Staff: reply 200'); link('Report link webhook', 'Flow: link');
 add('Config', 'n8n-nodes-base.set', 3.4, { mode: 'raw', jsonOutput: JSON.stringify({ cfg }, null, 2), includeOtherFields: true, options: {} }, [440, 300], { notes: 'ALL settings live here. Replace every REPLACE_ value: link_secret = a long random string (32+ characters). emr_base = EMR+ host (only the Report link flow uses it; leave the placeholder until you have it). emr_mode "dummy" serves clearly labelled dummy PDFs for testing; "live" fetches real reports.', notesInFlow: true });
 ['Flow: print', 'Flow: print scheduled', 'Flow: stuck', 'Flow: staff', 'Flow: link'].forEach(f => link(f, 'Config'));
 code('Check config', CODE.check_config, [660, 300]);
@@ -124,12 +133,13 @@ chain('Find stuck deals', 'Decide stuck updates', 'Apply stuck updates');
 
 // ---------- FLOW 3: STAFF ----------
 note('Flow 3 note', '## 3. Staff actions\nHubSpot sends the deal ID. n8n re-reads the deal, validates the request (note required, no active job, etc.) and updates it. Rejections are written to the Print request note as "REJECTED: ...". Print action is reset to None. Needs no printer call: the deal record is the source of truth.', [1100, 760], 600, 130);
-code('Read staff request', CODE.read_request, [1100, 960]);
+if (!LIVE) code('Read staff request', CODE.read_request, [1100, 960]);
+if (LIVE) { search('Find staff requests', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.action,operator:'HAS_PROPERTY'},{propertyName:${C}.fields.action,operator:'NEQ',value:${C}.values.action_none}]`, [1100, 960]); code('Staff requests to deals', CODE.poll_requests, [1320, 1060], 'One item per deal that has a Print action set. None => the run ends.'); }
 add('Read deal', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: `={{ ${C}.hubspot_base + '/crm/v3/objects/deals/' + $json.deal_id + '?properties=' + ${props}.join(',') }}`, ...HS, options: {} }, [1320, 960], retry);
 code('Decide staff action', CODE.decide_staff, [1540, 960]);
 add('Apply staff action', 'n8n-nodes-base.httpRequest', 4.2, { method: 'PATCH', url: `={{ ${C}.hubspot_base + '/crm/v3/objects/deals/' + $json.deal_id }}`, ...HS, sendBody: true, specifyBody: 'json', jsonBody: '={{ {properties:$json.properties} }}', options: {} }, [1760, 960], retry);
-link('Route', 'Read staff request', 2);
-chain('Read staff request', 'Read deal', 'Decide staff action', 'Apply staff action');
+if (LIVE) { link('Route', 'Find staff requests', 2); chain('Find staff requests', 'Staff requests to deals', 'Read deal', 'Decide staff action', 'Apply staff action'); }
+else { link('Route', 'Read staff request', 2); chain('Read staff request', 'Read deal', 'Decide staff action', 'Apply staff action'); }
 
 // ---------- FLOW 4: REPORT LINK (called by the gateway) ----------
 note('Flow 4 note', '## 4. Report link\nThe print gateway opens one link per job. We check the signature and expiry, then: manifest => build a plain PDF here; report => stream it from EMR+ (or a labelled dummy PDF in test mode). The PDF is never saved. Errors answer with a status code the print run turns into a readable reason (404 no case, 409 not completed, 403 EMR+ access, 410 expired, 422 bad link, 503 EMR+ unavailable/not configured).', [1100, 1160], 640, 160);
@@ -171,7 +181,7 @@ link('Build print request', 'Dry run?'); link('Dry run?', 'Dry run: fetch links,
 chain('Dry run: fetch links, no printing', 'Write dry run results', 'Next batch');
 
 const main = {
-  name: 'Lalu Print - Main (print run, stuck check, staff actions, report link)',
+  name: LIVE ? 'Lalu Print - Ops Portal (print run, stuck check, staff actions, report link)' : 'Lalu Print - Main (print run, stuck check, staff actions, report link)',
   nodes, connections: conns, active: false,
   settings: { executionOrder: 'v1', timezone: 'Europe/London', saveExecutionProgress: false, saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveManualExecutions: false, executionTimeout: 7200 },
   pinData: {}, tags: []
@@ -185,6 +195,6 @@ ec['Error Trigger'] = { main: [[{ node: 'Email Ops and Engineering', type: 'main
 const err = { name: 'Lalu Print - Error alert', nodes: en, connections: ec, active: false, settings: { executionOrder: 'v1', timezone: 'Europe/London' }, pinData: {}, tags: [] };
 
 fs.mkdirSync(require('path').join(__dirname,'..','n8n'), { recursive: true });
-fs.writeFileSync(require('path').join(__dirname,'..','n8n','Lalu_Print_Main.json'), JSON.stringify(main, null, 2));
-fs.writeFileSync(require('path').join(__dirname,'..','n8n','Lalu_Print_Error_Alert.json'), JSON.stringify(err, null, 2));
+fs.writeFileSync(require('path').join(__dirname,'..','n8n', LIVE ? 'Lalu_Print_OpsPortal.json' : 'Lalu_Print_Main.json'), JSON.stringify(main, null, 2));
+if (!LIVE) fs.writeFileSync(require('path').join(__dirname,'..','n8n','Lalu_Print_Error_Alert.json'), JSON.stringify(err, null, 2));
 console.log('nodes', nodes.length, 'code nodes', nodes.filter(n => n.type.endsWith('.code')).length);

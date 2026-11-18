@@ -289,5 +289,24 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(rs.map(x => x.json.deal_id).join() === '11,12', 'HubSpot event batch: unique deals, only Print action changes, our own reset to none ignored');
   ok((await run('Read staff request', { nodes: { __body: [ev(13, 'none')] } })).length === 0, 'reset-only batch does nothing');
 
+  // ---- ops portal build (PRINT_ENV=live) ----
+  execSync('node build.js', { cwd: __dirname, env: { ...process.env, PRINT_ENV: 'live' } });
+  const lw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'n8n', 'Lalu_Print_OpsPortal.json'), 'utf8'));
+  const lnames = lw.nodes.map(n => n.name);
+  ok(!lnames.includes('Staff action webhook') && lnames.includes('Staff action poll (every minute)'), 'ops build: poll replaces the staff webhook');
+  const lweb = lw.nodes.filter(n => n.type === 'n8n-nodes-base.webhook');
+  ok(lweb.length === 1 && lweb[0].parameters.path === 'lalu-report-ops', 'ops build: only the report link webhook, on its own path');
+  ok(wf.nodes.find(n => n.name === 'Report link webhook').parameters.path === 'lalu-report', 'sandbox keeps lalu-report');
+  const lcfg = JSON.parse(lw.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg;
+  ok(lcfg.environment === 'live' && lcfg.report_path === 'lalu-report-ops' && lcfg.dry_run === true, 'ops build: Config is live, own report path, dry run on');
+  ok(lw.active === false, 'ops build is inactive');
+  const pollCode = lw.nodes.find(n => n.name === 'Staff requests to deals').parameters.jsCode;
+  const pollRun = (items) => new Function('$', '$input', pollCode)(() => ({ first: () => ({ json: { cfg: lcfg } }) }), { all: () => items });
+  const polled = pollRun([{ json: { results: [{ id: '1', properties: { print_action: 'print_reprint' } }, { id: '2', properties: { print_action: 'none' } }, { id: '3', properties: {} }] } }, { json: { body: { results: [{ id: '1', properties: { print_action: 'print_reprint' } }, { id: '4', properties: { print_action: 'report_problem' } }] } } }]);
+  ok(polled.map(x => x.json.deal_id).join() === '1,4', 'poll: unique deals with a Print action set, none/blank ignored');
+  ok(pollRun([{ json: { results: [] } }]).length === 0, 'poll: nothing to do');
+  // rebuild sandbox so the committed file is the sandbox one
+  execSync('node build.js', { cwd: __dirname });
+
   console.log('PASS', pass, 'checks');
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });
