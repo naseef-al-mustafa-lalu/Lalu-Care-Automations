@@ -32,7 +32,7 @@ for (const n of ['Send PDF', 'Send error']) ok(!wf.connections[n], n + ' is term
 // ---------- harness ----------
 const real = JSON.parse(JSON.stringify(cfg).replace(/REPLACE_[A-Z_]+/g, m => 'X_' + m.slice(8)));
 real.link_secret = 'test-secret-for-hmac-1234567890abcdef'; real.dry_run = false; // the strict (real print) behaviour is what most tests cover
-real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.to_be_sent_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest';
+real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.to_be_sent_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest'; real.issue_stages = { PIP: 'S_ISS_PIP', UC: 'S_ISS_UC', HAA: 'S_ISS_UC' }; real.awaiting_stage_by_type = { PIP: 'S_PIP', UC: 'S_UCHAA', HAA: 'S_UCHAA' };
 const mkitem = (json, binary) => ({ json, binary });
 const b64 = s => Buffer.from(s).toString('base64');
 async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, http } = {}) {
@@ -245,6 +245,10 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const bru = async (inp) => (await run('Build result updates', { input: [inp], nodes: { 'Print outcome': [full] } })).flatMap(x => x.json.inputs);
   let ru = await bru(stages(meta.cases.map(() => 'S_PIP'))); ok(ru.every(u => u.properties.dealstage === 'S_INV' || u.properties.dealstage === 'S_SEND') && ru.length === meta.cases.length, 'moves from awaiting stage');
   ru = await bru(stages(meta.cases.map(() => 'S_SEND'))); ok(ru.every(u => !('dealstage' in u.properties) && u.properties.dispatch_hold_printing === 'false'), 'stage staff already moved is not overwritten');
+  { const failedOut = { ...(await oc({ statusCode: 200, body: { batchStatus: 'completed', jobsFailed: 1, results: [{ jobId: meta.cases[0].job_id, status: 'failed', errorCode: 'X(404)' }] } }))[0].json }; ok(failedOut.issue_moves.length >= 1 && failedOut.read_inputs.some(r => r.id === meta.cases[0].deal_id), 'failed job is read for an Issues stage move');
+    const bru2 = async (inp) => (await run('Build result updates', { input: [inp], nodes: { 'Print outcome': [mkitem(failedOut)] } })).flatMap(x => x.json.inputs);
+    const r2 = await bru2(stages(meta.cases.map(() => 'S_PIP'))); const f1 = r2.find(u => u.id === meta.cases[0].deal_id); ok(f1.properties.print_status === 'needs_attention' && /^S_ISS_/.test(f1.properties.dealstage), 'failed print moves the deal to its Issues stage');
+    const r3 = await bru2(stages(meta.cases.map(() => 'S_SEND'))); ok(!('dealstage' in r3.find(u => u.id === meta.cases[0].deal_id).properties), 'failed print does not move a deal staff already moved'); }
   ru = await bru(mkitem({ statusCode: 500, body: {} })); ok(ru.every(u => u.properties.dispatch_hold_printing === 'true' && /could not be read/.test(u.properties.print_issue)), 'unreadable deal keeps the hold');
   const stopIn = (r, outcome) => run('Stop if printer result unsafe', { input: [mkitem(r)], nodes: { 'Print outcome': [mkitem(outcome)] } });
   ok((await stopIn({}, { unsafe: false, pack_ref: 'P' })).length === 1, 'safe continues');
@@ -257,13 +261,20 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const stuck = async (deals) => (await run('Decide stuck updates', { input: [mkitem({ results: deals })] })).flatMap(x => x.json.inputs);
   let su = await stuck([{ id: '1', properties: { print_status: 'preparing', hs_lastmodifieddate: ago(90) } }, { id: '2', properties: { print_status: 'preparing', hs_lastmodifieddate: ago(5) } }]);
   ok(su.length === 1 && su[0].id === '1' && su[0].properties.print_status === 'needs_attention' && su[0].properties.dispatch_hold_printing === 'true', 'stale Preparing flagged, fresh left alone');
+  su = await stuck([{ id: '3', properties: { print_status: 'preparing', hs_lastmodifieddate: ago(90), dealstage: 'S_PIP', report_type: 'PIP' } }]); ok(su[0].properties.dealstage === 'S_ISS_PIP', 'stuck PIP deal moves to PIP - Issues');
   ok((await stuck([])).every(x => x.inputs && x.inputs.length === 0 || true), 'empty ok');
 
   // ---- staff actions (HubSpot record only)
   const stf = async (props) => run('Decide staff action', { input: [mkitem({ id: '77', properties: { dealstage: 'S_PIP', report_type: 'PIP', ...props } })] });
   ok((await stf({ print_action: 'none' })).length === 0, 'no action');
   let s = await stf({ print_action: 'report_problem', print_request_note: '' }); ok(/^REJECTED/.test(s[0].json.properties.print_request_note) && s[0].json.properties.print_action === 'none', 'note required');
-  s = await stf({ print_action: 'report_problem', print_request_note: 'Pages 3-4 blank', print_status: 'printed' }); ok(s[0].json.properties.print_status === 'needs_attention' && s[0].json.properties.dispatch_hold_printing === 'true' && s[0].json.properties.print_issue === 'Pages 3-4 blank' && !('dealstage' in s[0].json.properties), 'report problem keeps the stage');
+  s = await stf({ print_action: 'report_problem', print_request_note: 'Pages 3-4 blank', print_status: 'printed' }); ok(s[0].json.properties.print_status === 'needs_attention' && s[0].json.properties.dispatch_hold_printing === 'true' && s[0].json.properties.print_issue === 'Pages 3-4 blank' && s[0].json.properties.dealstage === 'S_ISS_PIP', 'report problem moves a PIP deal to PIP - Issues');
+  s = await stf({ print_action: 'report_problem', print_request_note: 'blank pages', print_status: 'printed', report_type: 'UC&ESA', dealstage: 'S_UCHAA' }); ok(s[0].json.properties.dealstage === 'S_ISS_UC', 'report problem moves a UC deal to UC113/HSA - Issues');
+  s = await stf({ print_action: 'report_problem', print_request_note: 'x', print_status: 'printed', dealstage: 'S_SEND' }); ok(!('dealstage' in s[0].json.properties), 'report problem does not drag a deal back from a later stage');
+  s = await stf({ print_action: 'print_reprint', print_request_note: 'fixed', print_status: 'needs_attention', dealstage: 'S_ISS_PIP' }); ok(s[0].json.properties.print_status === 'queued' && s[0].json.properties.dealstage === 'S_PIP', 'reprint returns a PIP deal from Issues to awaiting printing');
+  s = await stf({ print_action: 'print_reprint', print_request_note: 'fixed', print_status: 'needs_attention', report_type: 'UC&ESA', dealstage: 'S_ISS_UC' }); ok(s[0].json.properties.dealstage === 'S_UCHAA', 'reprint returns a UC deal from Issues to awaiting printing');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'by hand', print_status: 'needs_attention', dealstage: 'S_ISS_PIP' }); ok(s[0].json.properties.dealstage === 'S_INV', 'manual print from the Issues stage hands off to PIP invoicing');
+  s = await stf({ print_action: 'printed_manually', print_request_note: 'by hand', print_status: 'needs_attention', report_type: 'UC&ESA', dealstage: 'S_ISS_UC' }); ok(s[0].json.properties.dealstage === 'S_SEND', 'manual print from the Issues stage hands off to To be sent (UC)');
   s = await stf({ print_action: 'resolve_problem', print_request_note: 'Reprinted page by hand', print_status: 'needs_attention', print_issue: 'x', print_completed_at: ago(10) }); ok(s[0].json.properties.print_status === 'printed' && s[0].json.properties.dispatch_hold_printing === 'false' && s[0].json.properties.dealstage === 'S_INV' && s[0].json.properties.print_issue === '', 'resolve ok + handoff');
   s = await stf({ print_action: 'resolve_problem', print_request_note: 'fixed', print_status: 'needs_attention' }); ok(/REJECTED.*no successful print record/.test(s[0].json.properties.print_request_note), 'resolve needs a successful print record');
   s = await stf({ print_action: 'print_reprint', print_request_note: 'jam', print_status: 'preparing' }); ok(/REJECTED/.test(s[0].json.properties.print_request_note), 'reprint blocked while active');

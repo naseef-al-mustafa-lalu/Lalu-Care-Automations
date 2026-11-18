@@ -36,6 +36,8 @@ const cfg = {
   colour: false,
   pipeline_id: '28557963',
   awaiting_print_stages: ['64932357', '64932356'],
+  issue_stages: { PIP: '66989570', UC: '66989569', HAA: '66989569' }, // PIP - Issues; UC113/HSA - Issues
+  awaiting_stage_by_type: { PIP: '64932357', UC: '64932356', HAA: '64932356' },
   pip_invoicing_stage: '64932358',
   to_be_sent_stage: '65006207',
   cancelled_rejected_stages: ['81292295', '65056856'],

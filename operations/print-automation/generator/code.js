@@ -12,7 +12,11 @@ return $input.all();`;
 
 const HELPERS = String.raw`const now=Date.now(); const nowISO=new Date(now).toISOString();
 const age=t=>{ if(!t) return Infinity; const d=/^\d+$/.test(String(t))?new Date(Number(t)):new Date(t); return isNaN(d)?Infinity:(now-d.getTime())/60000; };
-const handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)){ const t=c.report_types[String(p[F.report_type]||'').trim()]; if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };`;
+const typeOf=p=>c.report_types[String(p[F.report_type]||'').trim()];
+const isIssue=st=>Object.values(c.issue_stages).includes(st);
+const handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)||isIssue(p.dealstage)){ const t=typeOf(p); if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };
+const toIssue=(p,pr)=>{ const t=typeOf(p); if(t&&c.awaiting_print_stages.includes(p.dealstage)) pr.dealstage=c.issue_stages[t]; };
+const backToQueue=(p,pr)=>{ const t=typeOf(p); if(t&&isIssue(p.dealstage)) pr.dealstage=c.awaiting_stage_by_type[t]; };`;
 
 // ------------------------------------------------------------------ print run
 CODE.stop_if_blocked = String.raw`const n=Number(($input.first().json||{}).total||0);
@@ -86,7 +90,7 @@ for(const d of deals){
   else if(!type) bad='Report type not recognised';
   else if(!dest) bad='Destination address is empty on the deal (check the Third party company)';
   else if(c.require_known_destination&&!known) bad='Destination is not in the known destinations list in Config (add it, or fix the Third party company address)';
-  if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; updates.push({id,properties:pr}); }
+  if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; if(type&&c.awaiting_print_stages.includes(p.dealstage)) pr.dealstage=c.issue_stages[type]; updates.push({id,properties:pr}); }
   else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dest});
 }
 const groups=new Map();
@@ -153,7 +157,7 @@ const job=id=>{ const x=byId.get(String(id));
   if(x){ if(x.errorCode) return {ok:false,x}; const s=String(x.status||'').toLowerCase(); if(/fail|error|reject/.test(s)) return {ok:false,x}; return {ok:String(b.batchStatus||'')!=='failed',x}; }
   return {ok:String(b.batchStatus||'')==='completed'&&Number(b.jobsFailed||0)===0,x:null}; };
 const mf=kind==='results'?job(meta.manifest_job_id):{ok:false,x:null};
-const updates=[]; const handoff=[]; let okc=0, failed=0, f403=0;
+const updates=[]; const handoff=[]; const issue_moves=[]; let okc=0, failed=0, f403=0;
 for(const k of meta.cases){
   const pr={};
   if(kind==='results'){
@@ -171,18 +175,20 @@ for(const k of meta.cases){
   } else {
     pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Print result unknown (no clear answer from the print gateway). Check the paper output and printer queue before any reprint.';
   }
+  if(pr[F.status]===V.issue) issue_moves.push({id:k.deal_id,report_type:k.report_type});
   updates.push({id:k.deal_id,properties:pr});
 }
-return [{json:{kind,pack_ref:meta.pack_ref,unsafe:kind!=='results',updates,handoff,read_inputs:handoff.map(h=>({id:h.id})),jobs_ok:okc,jobs_failed:failed,all_failed_403:failed>0&&okc===0&&f403===failed,manifest_ok:mf.ok}}];`;
+return [{json:{kind,pack_ref:meta.pack_ref,unsafe:kind!=='results',updates,handoff,issue_moves,read_inputs:handoff.map(h=>({id:h.id})).concat(issue_moves.map(m=>({id:m.id}))),jobs_ok:okc,jobs_failed:failed,all_failed_403:failed>0&&okc===0&&f403===failed,manifest_ok:mf.ok}}];`;
 
 CODE.build_result_updates = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
 const o=$('Print outcome').first().json; const r=$input.first().json||{};
 const stage=new Map((((r.body||{}).results)||[]).map(x=>[String(x.id),(x.properties||{}).dealstage]));
-const upd=o.updates.slice();
+const im=new Map((o.issue_moves||[]).map(m=>[m.id,m.report_type]));
+const upd=o.updates.map(u=>{ const t=im.get(String(u.id)); if(t&&stage.has(String(u.id))&&c.awaiting_print_stages.includes(stage.get(String(u.id)))) return {id:u.id,properties:{...u.properties,dealstage:c.issue_stages[t]}}; return u; });
 for(const h of o.handoff){
   const pr={...h.properties};
   if(!stage.has(h.id)){ pr[F.hold]='true'; pr[F.issue]='Printed. The stage handoff was not applied because the deal could not be read. Use Resolve problem to hand off.'; }
-  else if(c.awaiting_print_stages.includes(stage.get(h.id))){ pr.dealstage=(h.report_type==='PIP')?c.pip_invoicing_stage:c.to_be_sent_stage; }
+  else if(c.awaiting_print_stages.includes(stage.get(h.id))||Object.values(c.issue_stages).includes(stage.get(h.id))){ pr.dealstage=(h.report_type==='PIP')?c.pip_invoicing_stage:c.to_be_sent_stage; }
   upd.push({id:h.id,properties:pr});
 }
 const out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100)}});
@@ -204,7 +210,7 @@ for(const d of seen.values()){
   const p=d.properties||{};
   if(age(p.hs_lastmodifieddate)>c.preparing_timeout_minutes){
     const pr={}; pr[F.status]=V.issue; pr[F.hold]='true';
-    pr[F.issue]='The print run did not finish for this case within '+c.preparing_timeout_minutes+' minutes. Check the paper output and printer queue before any reprint, then use Print / reprint if needed.';
+    pr[F.issue]='The print run did not finish for this case within '+c.preparing_timeout_minutes+' minutes. Check the paper output and printer queue before any reprint, then use Print / reprint if needed.'; toIssue(p,pr);
     upd.push({id:String(d.id),properties:pr});
   }
 }
@@ -244,7 +250,7 @@ if(c.cancelled_rejected_stages.includes(p.dealstage)) return reject('this deal i
 if(!note||note.startsWith('REJECTED:')) return reject('write a new Print request note explaining the request, then set Print action again');
 const pr={}; pr[F.action]=V.action_none;
 if(action===V.action_problem){
-  pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]=note.slice(0,500);
+  pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]=note.slice(0,500); toIssue(p,pr);
 } else if(action===V.action_resolve){
   if(!p[F.completed_at]) return reject('there is no successful print record on this deal, so the hold stays. Use Print / reprint if another copy is needed');
   pr[F.status]=V.printed; pr[F.issue]=''; pr[F.hold]='false'; handoff(p,pr);
@@ -255,7 +261,7 @@ if(action===V.action_problem){
 } else if(action===V.action_print){
   if(st===V.preparing||st===V.submitted) return reject('the earlier job may still be active. Check the printer queue and paper output first');
   if(!st||st===V.queued) return reject('this case has not been printed yet or is already queued');
-  pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.queued_at]=nowISO; pr[F.issue]=''; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]='';
+  pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.queued_at]=nowISO; pr[F.issue]=''; pr[F.batch]=''; pr[F.job_ref]=''; pr[F.submitted_at]=''; pr[F.completed_at]=''; backToQueue(p,pr);
 } else return reject('unknown Print action');
 return [{json:{deal_id:id,properties:pr}}];`.replace('${HELPERS}', HELPERS);
 
