@@ -46,7 +46,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 | Gateway token (`X-Print-Agent-Token`) | n8n Header Auth credential "Cardiff Print Agent" (used by the health check and the print call). Pilot token: rotate before production |
 | EMR+ API key (`Authorization: Api-Key <key>`) | n8n Header Auth credential on the node "Fetch report from EMR+". **Pending** |
 | HubSpot | n8n Header Auth credential on every HubSpot node (`Authorization: Bearer <private app token or service key>`, scopes `crm.objects.deals.read` and `crm.objects.deals.write`); one per portal (sandbox, live) |
-| Staff action webhook | No credential. A HubSpot private app webhook subscription (`deal.propertyChange` on `print_action`) posts to it. The flow trusts only the deal ID and re-reads the deal |
+| Staff action trigger | Sandbox: webhook (below). Ops portal build (`PRINT_ENV=live node generator/build.js` writes `n8n/Lalu_Print_OpsPortal.json`): no webhook; n8n polls every minute for deals with a Print action set, because the ops portal has no Operations Hub and new legacy private apps can no longer be created. The two workflows use different report link paths (`lalu-report` and `lalu-report-ops`). Sandbox: No credential. A HubSpot private app webhook subscription (`deal.propertyChange` on `print_action`) posts to it. The flow trusts only the deal ID and re-reads the deal |
 | Alert email | SMTP credential on the error workflow |
 | Link-signing secret | `link_secret` in the Config node (a long random string, set in n8n only, never committed). The only secret not held as an n8n credential, because Code and Crypto nodes cannot read credentials |
 
