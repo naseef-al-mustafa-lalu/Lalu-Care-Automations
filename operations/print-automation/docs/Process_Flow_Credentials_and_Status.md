@@ -207,7 +207,7 @@ Need attention: {attention_count}
 Still queued for the next run: {queued_count}
 
 What to do: open the saved HubSpot view "Print - Needs attention". Fix the cause, then set Print action to Print / reprint, or print by hand and set Print action to Printed manually with a note.
-Where a result is unknown, check the printer output and queue before using Print / reprint. Nothing is ever resent automatically.
+Where a result is unknown, check the printer output and queue first. If it printed, set Print action to Printed manually. If it did not, set Print / reprint. Nothing is ever resent automatically.
 
 Sent by the Lalu print automation (n8n). Please do not reply to this email.
 ```
