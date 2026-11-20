@@ -10,7 +10,7 @@ The six-step flow and the HubSpot deal section are unchanged. The printer connec
 - **No external tools.** Manifests are built as a plain PDF inside n8n. Nothing leaves Lalu systems.
 - **No report is stored anywhere.** n8n streams each PDF straight from EMR+ to the gateway when the gateway asks for it (see section 3).
 - **HubSpot is the only record of the state.** The n8n Data Tables from the earlier plan are not used. Print status, batch ID, job reference and issues all live on the deal.
-- **Schedule:** daily at 08:30 Europe/London (the earlier plan said 09:00 on working days), with a configurable batch size and a daily limit.
+- **Schedule:** Monday to Friday from 08:30 Europe/London; if the printer is offline n8n checks again every 30 minutes until 16:30 (the earlier plan said 09:00 on working days), with a configurable batch size and a daily limit.
 
 ## 2. The process flow
 
@@ -22,7 +22,7 @@ When a deal first enters an awaiting-printing stage, a HubSpot workflow sets:
 
 Stages: UC/HSA awaiting printing (64932356), PIP awaiting printing (64932357). Processed or active cases are kept out of re-enrolment. No report download happens yet.
 
-### 2. Select the cases for this run (n8n, 08:30 daily)
+### 2. Select the cases for this run (n8n, from 08:30 on working days)
 1. n8n first checks the printer is ready (gateway health: status online, spooler running, printer Normal, correct queue).
 2. If not ready, nothing is sent and the team is alerted.
 3. n8n then reads the queue and checks case reference (mediref), report type and destination.
@@ -50,7 +50,7 @@ The gateway returns a result per job in the same response (batch status and each
 
 ### 6. Return to the current fulfilment process
 After successful printing with no open issue:
-1. The printing hold is cleared. UC/HSA moves to To be sent (65006207).
+1. The printing hold is cleared. UC/HSA moves to Completed (65006208).
 2. PIP moves to PIP Awaiting Invoicing (64932358).
 3. A stage staff already changed is never overwritten. Reprints never move a deal backwards.
 
@@ -114,11 +114,11 @@ After successful printing with no open issue:
 - One run at a time. The run checks for an active batch before starting.
 - Timeout or restart during sending: mark the batch "sent, result unknown", stop, and alert. Staff check the printer, then use Print / reprint if needed. Never auto-resend.
 - A HubSpot update failure never triggers reprinting; only the deal update is retried.
-- If the printer is not ready at 08:30, nothing is sent and the team is alerted; cases stay Queued for the next run.
+- If the printer is not ready at 08:30, nothing is sent and the team is alerted once. n8n checks again every 30 minutes and runs the batches once, as soon as the printer is online. If it is still offline at 16:30 the team is alerted again; cases stay Queued and the next weekday run tries again.
 
 | What goes wrong | What the deal shows | What happens next |
 |---|---|---|
-| Printer not ready at 08:30 (health check fails) | Stays Queued | Nothing is sent and the team is alerted. The cases are picked up at the next run. |
+| Printer not ready at 08:30 (health check fails) | Stays Queued | Nothing is sent and the team is alerted. n8n checks again every 30 minutes until 16:30 and runs the batches once the printer is online. If it is still offline at 16:30, the team is alerted again and the cases are picked up at the next weekday run. |
 | Gateway rejects the call (wrong or missing token, more than 25 jobs, report over 150 MB, not a PDF) | Needs attention, reason in Print issue | Nothing prints. Fix the cause, then use Print / reprint. |
 | A report cannot be fetched from EMR+ (400, 404 or 409: case or deal ID mismatch, not completed, report not available, report too large) | Needs attention, reason in Print issue | The gateway reports that job as failed. The manifest already lists the case, so staff are told which report is missing. Whether later jobs still print is to be confirmed in the pilot. Reprint once fixed. |
 | EMR+ rejects the key or IP address (403) | Needs attention on the affected cases | The run stops and the team is alerted. Fix the key or the IP allow-list, then reprint. Tell Naseef: this is a credentials issue. |
@@ -177,7 +177,7 @@ Run in the sandbox with dry run on unless marked live. Live tests print real pap
 | Wrong checksum and duplicate job ID | Send a job with a wrong checksum, then one with a duplicate job ID | Treated as a failed job and the deal is flagged | Live print |
 | Paper jam, out of paper, toner | Cause each condition on the printer | The printer status stops the next run and cases stay Queued | Live print |
 | Printed manually | Try it without a note, with a note, while Preparing or Sent to printer, and when already Printed | Refused without a note and in the blocked states; otherwise Print status = Printed, hold = No, stage moves | Sandbox |
-| Statuses and stage moves | Dry run does not reach Sent to printer, Printed or the stage handoff, so use a real test print or set the values by hand | UC/HSA moves to To be sent and PIP to PIP Awaiting Invoicing; a stage staff already changed is not overwritten | Sandbox |
+| Statuses and stage moves | Dry run does not reach Sent to printer, Printed or the stage handoff, so use a real test print or set the values by hand | UC/HSA moves to Completed and PIP to PIP Awaiting Invoicing; a stage staff already changed is not overwritten | Sandbox |
 | EMR+ errors | 403 (key or IP allow-list), 429 and 500 retries | Behaviour matches the failure table | Sandbox |
 | Network | Gateway fetches report links from n8n; EMR+ accepts the n8n address | Done in testing | Done |
 | Execution data | Confirm n8n execution data does not keep PDF content (see the tracker for the 25 November change) | No PDF content is kept | n8n settings |
@@ -228,7 +228,7 @@ Deal view "Print - Needs attention": filter Print status is any of Needs attenti
 
 ## 13. Weekday schedule, wrong medi ref, task list (17 November)
 
-- **Schedule:** the scheduled run is Monday to Friday at 08:30 (Europe/London) and skips dates listed in Config `bank_holidays` (YYYY-MM-DD, update each year). A manual run ignores the list. A "Working day?" node does the check.
+- **Schedule:** the scheduled run is Monday to Friday, first check at 08:30 (Europe/London) then every 30 minutes until the printer is online or 16:30 (Config run_start_time and retry_until_time), once a day and skips dates listed in Config `bank_holidays` (YYYY-MM-DD, update each year). A manual run ignores the list. A "Working day?" node does the check.
 - **Wrong medi ref:** a missing or non-numeric medi ref is flagged before queuing. A medi ref that EMR+ cannot match to the deal (wrong, copied from another case, or the instruction is not linked to the deal's submission reference) returns 400 or 404; the Print issue on the deal says what to check and correct, then use Print / reprint. EMR+ only returns a report for an instruction linked to that deal, so a medi ref copied from another case cannot print the wrong report.
 - **Known destinations to confirm (Appendix C of the Google Doc):** Serco, Maximus and Ingeus share one mail unit (WV99 1AH); the other six addresses need standard addresses from the team. One entry ("Centre for Health and Disability Assessments") names no site and cannot be matched.
 - **Open tasks:** kept in Appendix B of the Google Doc (all Incomplete).

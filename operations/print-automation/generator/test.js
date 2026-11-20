@@ -10,7 +10,7 @@ let pass = 0; const ok = (c, m) => { assert(c, m); pass++; };
 // ---------- structural checks ----------
 const names = wf.nodes.map(n => n.name); ok(new Set(names).size === names.length, 'unique names');
 for (const [from, v] of Object.entries(wf.connections)) { ok(names.includes(from), 'conn source ' + from); for (const o of v.main) for (const t of o) ok(names.includes(t.node), 'conn target ' + t.node); }
-for (const n of wf.nodes.filter(n => n.type.endsWith('.code'))) { try { new AsyncFunction('$', '$input', '$json', '$execution', n.parameters.jsCode); pass++; } catch (e) { throw new Error('compile ' + n.name + ': ' + e.message); } }
+for (const n of wf.nodes.filter(n => n.type.endsWith('.code'))) { try { new AsyncFunction('$', '$input', '$json', '$execution', '$getWorkflowStaticData', n.parameters.jsCode); pass++; } catch (e) { throw new Error('compile ' + n.name + ': ' + e.message); } }
 const trig = wf.nodes.filter(n => /Trigger|webhook|manualTrigger/.test(n.type)).map(n => n.name);
 const seen = new Set(trig); let q = [...trig]; while (q.length) { const x = q.pop(); for (const o of (wf.connections[x] || { main: [] }).main) for (const t of o) if (!seen.has(t.node)) { seen.add(t.node); q.push(t.node); } }
 const unreachable = wf.nodes.filter(n => !n.type.endsWith('stickyNote') && !seen.has(n.name)).map(n => n.name); ok(unreachable.length === 0, 'unreachable: ' + unreachable);
@@ -22,7 +22,7 @@ const cfg = JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOu
 ok(cfg.link_secret === 'REPLACE_LINK_SECRET' && cfg.emr_base === 'https://lalucare.uat.lalu.co.uk', 'secret is a placeholder and EMR host is the UAT address');
 // single entry per flow, 4-way route
 const route = wf.nodes.find(n => n.name === 'Route'); ok(route.parameters.rules.values.length === 4, 'four flows');
-const trg = wf.nodes.find(n => n.name === 'Weekday 08:30 print run'); ok(trg.parameters.rule.interval[0].expression === '30 8 * * 1-5' && wf.settings.timezone === 'Europe/London', '08:30 UK daily');
+const trg = wf.nodes.find(n => n.name === 'Weekday print run (every 30 min)'); ok(trg.parameters.rule.interval[0].expression === '0,30 8-16 * * 1-5' && wf.settings.timezone === 'Europe/London', 'every 30 minutes 08:00-16:30 UK, Monday to Friday (window set in Config)');
 ok(wf.nodes.find(n => n.name === 'Submit to gateway').parameters.options.timeout >= 600000, 'long gateway timeout');
 ok(!wf.nodes.find(n => n.name === 'Submit to gateway').retryOnFail, 'no retry on the print call');
 ok(wf.nodes.find(n => n.name === 'Report link webhook').parameters.responseMode === 'responseNode', 'link webhook replies from a node');
@@ -32,10 +32,10 @@ for (const n of ['Send PDF', 'Send error']) ok(!wf.connections[n], n + ' is term
 // ---------- harness ----------
 const real = JSON.parse(JSON.stringify(cfg).replace(/REPLACE_[A-Z_]+/g, m => 'X_' + m.slice(8)));
 real.link_secret = 'test-secret-for-hmac-1234567890abcdef'; real.dry_run = false; // the strict (real print) behaviour is what most tests cover
-real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.to_be_sent_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest'; real.issue_stages = { PIP: 'S_ISS_PIP', UC: 'S_ISS_UC', HAA: 'S_ISS_UC' }; real.awaiting_stage_by_type = { PIP: 'S_PIP', UC: 'S_UCHAA', HAA: 'S_UCHAA' };
+real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.completed_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest'; real.issue_stages = { PIP: 'S_ISS_PIP', UC: 'S_ISS_UC', HAA: 'S_ISS_UC' }; real.awaiting_stage_by_type = { PIP: 'S_PIP', UC: 'S_UCHAA', HAA: 'S_UCHAA' };
 const mkitem = (json, binary) => ({ json, binary });
 const b64 = s => Buffer.from(s).toString('base64');
-async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, http } = {}) {
+async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, http, sd = {} } = {}) {
   const c = cfgOverride || real;
   const env = { ...nodes, Config: [mkitem({ cfg: c, flow: 'x', body: nodes.__body, query: nodes.__query })] };
   const $ = n => { const a = env[n]; if (!a) throw new Error('Node not executed: ' + n); return { first: () => a[0], all: () => a, itemMatching: i => a[i], item: a[0] }; };
@@ -44,8 +44,8 @@ async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, ht
     async httpRequest(o) { return http(o); },
     async getBinaryDataBuffer(i, key) { return Buffer.from(input[i].binary[key].data, 'base64'); },
     async prepareBinaryData(buf, fileName, mimeType) { return { data: buf.toString('base64'), fileName, mimeType }; } } };
-  const fn = new AsyncFunction('$', '$input', '$json', '$execution', '$runIndex', codeOf(name));
-  return await fn.call(ctx, $, $input, input[0] && input[0].json, { id: '1' }, runIndex);
+  const fn = new AsyncFunction('$', '$input', '$json', '$execution', '$runIndex', '$getWorkflowStaticData', codeOf(name));
+  return await fn.call(ctx, $, $input, input[0] && input[0].json, { id: '1' }, runIndex, () => sd);
 }
 const throws = async (p, re) => { try { await p; } catch (e) { ok(re.test(e.message), 'wrong error ' + e.message); return; } assert.fail('expected throw ' + re); };
 const hmac = (payload, secret = real.link_secret) => crypto.createHmac('sha256', secret).update(payload).digest('hex');
@@ -69,6 +69,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   // ---- guard + pre-flight + allowance
   await throws(run('Stop if run unfinished', { input: [mkitem({ total: 2 })] }), /PRINT_RUN_BLOCKED/);
   ok((await run('Stop if run unfinished', { input: [mkitem({ total: 0 })] })).length === 1, 'guard ok');
+  const todayUK0 = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
   const pf = async (r, c) => run('Printer ready?', { input: [mkitem(r)], cfgOverride: c });
   const okr = await pf({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerQueue: 'CRD-PRN-01-AUTO' } });
   ok(okr[0].json.printer_state === 'ready' && /^\d{13}$/.test(okr[0].json.day_start_ms) && Date.now() - Number(okr[0].json.day_start_ms) < 25 * 3600e3, 'ready + day start in last 25h');
@@ -112,8 +113,17 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const dowUK = new Date(todayUK + 'T12:00:00Z').getUTCDay();
   ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [todayUK] } })).length === 0, 'scheduled run skips a bank holiday');
   ok((await run('Working day?', { input: [mkitem({})], cfgOverride: { ...real, bank_holidays: [todayUK] } })).length === 1, 'manual run ignores bank holidays');
-  ok(((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [] } })).length === 1) === (dowUK >= 1 && dowUK <= 5), 'scheduled run goes ahead only on weekdays');
-  ok(wf.nodes.find(n => n.name === 'Weekday 08:30 print run').parameters.rule.interval[0].expression === '30 8 * * 1-5', 'cron is Monday to Friday');
+  ok(((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [], run_start_time: '00:00', retry_until_time: '23:59' } })).length === 1) === (dowUK >= 1 && dowUK <= 5), 'scheduled run goes ahead only on weekdays');
+  // retry window and once-a-day guard
+  const wide = { ...real, bank_holidays: [], run_start_time: '00:00', retry_until_time: '23:59' };
+  if (dowUK >= 1 && dowUK <= 5) {
+    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...wide, run_start_time: '25:00' } })).length === 0, 'scheduled tick before the start time does nothing');
+    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...wide, retry_until_time: '-' } })).length === 0, 'scheduled tick after the cut-off does nothing');
+    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: wide, sd: { ran_day: todayUK } })).length === 0, 'scheduled tick after today\'s run has gone ahead does nothing');
+    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: wide, sd: { ran_day: '2000-01-01' } })).length === 1, 'a run on an earlier day does not block today');
+  }
+  ok((await run('Working day?', { input: [mkitem({})], cfgOverride: { ...wide, run_start_time: '25:00' }, sd: { ran_day: todayUK } })).length === 1, 'manual run ignores the window and the daily guard');
+  ok(wf.nodes.find(n => n.name === 'Weekday print run (every 30 min)').parameters.rule.interval[0].expression === '0,30 8-16 * * 1-5', 'cron is Monday to Friday');
   const capCfg = { ...real, reports_per_call: 1 };
   const bp2 = await run('Build batches and claim updates', { nodes: bpNodes, cfgOverride: capCfg });
   ok(bp2[0].json.packs.length === 3 && bp2[0].json.packs.filter(p => p.destination === 'DWP Leeds').map(p => p.part + '/' + p.parts).join() === '1/2,2/2', 'per-call cap splits a destination into labelled parts');
@@ -195,7 +205,20 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
 
   { const d = { ...real, dry_run: true }; const r1 = await run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: d });
     ok(/dry_run_not_checked/.test(r1[0].json.printer_state) && /^\d+$/.test(r1[0].json.day_start_ms), 'dry run: an unreachable gateway does not stop the run');
-    await throws(run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: { ...real, dry_run: false } }), /PRINTER_NOT_READY/); }
+    await throws(run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: { ...real, dry_run: false } }), /PRINTER_NOT_READY/);
+    // scheduled run: first offline check alerts and retries, later checks stay quiet, the cut-off alerts again, online sets the once-a-day flag
+    const live = { ...real, dry_run: false, run_start_time: '00:00', retry_until_time: '23:59' };
+    const schedNodes = { 'Working day?': [mkitem({ scheduled: true })] };
+    const sdx = {};
+    await throws(run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: live, nodes: schedNodes, sd: sdx }), /PRINTER_NOT_READY_WILL_RETRY.*every 30 minutes/);
+    ok((await run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: live, nodes: schedNodes, sd: sdx })).length === 0, 'second offline check the same day is quiet and ends the run');
+    await throws(run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: { ...live, retry_until_time: '00:00' }, nodes: schedNodes, sd: sdx }), /PRINTER_NOT_READY_GAVE_UP/);
+    const sdy = {}; const good = { statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'Normal', printerQueue: real.printer_queue } };
+    ok((await run('Printer ready?', { input: [mkitem(good)], cfgOverride: live, nodes: schedNodes, sd: sdy })).length === 1 && sdy.ran_day === todayUK0, 'online scheduled check goes ahead and records today');
+    const sdm = {}; await run('Printer ready?', { input: [mkitem(good)], cfgOverride: live, sd: sdm }); ok(!sdm.ran_day, 'manual run does not set the daily flag');
+    const sdb = { }; const blk = [mkitem({ total: 2 })];
+    await throws(run('Stop if run unfinished', { input: blk, cfgOverride: live, nodes: schedNodes, sd: sdb }), /PRINT_RUN_BLOCKED/);
+    ok((await run('Stop if run unfinished', { input: blk, cfgOverride: live, nodes: schedNodes, sd: sdb })).length === 0, 'scheduled blocked alert is sent once a day'); }
   // ---- dry run (stands in for the gateway, sends nothing to the printer)
   { const meta = { pack_ref: 'PK1', manifest_job_id: 'PK1-M', cases: [{ deal_id: '11', job_id: 'J1', report_type: 'UC' }, { deal_id: '22', job_id: 'J2', report_type: 'PIP' }] };
     const req = { json: { meta, body: { jobs: [{ jobId: 'PK1-M', documentUrl: 'u/m' }, { jobId: 'J1', documentUrl: 'u/1' }, { jobId: 'J2', documentUrl: 'u/2' }] } } };

@@ -26,6 +26,8 @@ const cfg = {
   dry_run: true,
   max_report_mb: 150,
   // Known destinations: a deal whose destination_address contains any text in match (compared ignoring case, punctuation and spacing) is printed to canonical. Same recipient written two ways then shares one batch.
+  run_start_time: '08:30', // scheduled runs check the printer from this time (UK time, HH:MM) ...
+  retry_until_time: '16:30', // ... every 30 minutes until this time; if the printer is still offline an alert is sent and the next weekday run tries again
   bank_holidays: ['2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'], // England and Wales; dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   destinations: [],
   require_known_destination: false,
@@ -39,7 +41,7 @@ const cfg = {
   issue_stages: { PIP: '66989570', UC: '66989569', HAA: '66989569' }, // PIP - Issues; UC113/HSA - Issues
   awaiting_stage_by_type: { PIP: '64932357', UC: '64932356', HAA: '64932356' },
   pip_invoicing_stage: '64932358',
-  to_be_sent_stage: '65006207',
+  completed_stage: '65006208', // Completed: where UC/HSA and HAA deals move after a successful print
   cancelled_rejected_stages: ['81292295', '65056856'],
   fields: {
     case_ref: 'mediref', report_type: 'report_type',
@@ -79,15 +81,15 @@ const hsPost = (name, path, bodyExpr, pos, extraOpts = {}, extra = retry) => add
 const flowSet = (name, flow, pos) => add(name, 'n8n-nodes-base.set', 3.4, { assignments: { assignments: [{ id: uid(), name: 'flow', value: flow, type: 'string' }] }, includeOtherFields: true, options: {} }, pos);
 
 // ---------- triggers + config + routing ----------
-note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (Mon–Fri 08:30 UK, skipping bank_holidays, or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.', [0, -420], 600, 200);
-add('Weekday 08:30 print run', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '30 8 * * 1-5' }] } }, [0, 0]);
+note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (Mon–Fri, first check 08:30 UK then every 30 min until the printer is online or 16:30; skips bank_holidays; or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.', [0, -420], 600, 200);
+add('Weekday print run (every 30 min)', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '0,30 8-16 * * 1-5' }] } }, [0, 0]);
 add('Manual print run', 'n8n-nodes-base.manualTrigger', 1, {}, [0, 120]);
 add('Every 15 min stuck check', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'minutes', minutesInterval: 15 }] } }, [0, 300]);
 if (!LIVE) { add('Staff action webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'POST', path: 'lalu-print-action', responseMode: 'responseNode', options: {} }, [0, 480], { notes: 'Target of a HubSpot private app webhook subscription: deal.propertyChange on print_action (event batches are accepted). No credential: HubSpot cannot send a custom header, and the flow trusts nothing in the payload except the deal ID. It re-reads the deal and acts only on what the deal record says. Also accepts {"deal_id": "..."}. Replies 200 immediately.', notesInFlow: true }); }
 if (LIVE) add('Staff action poll (every minute)', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'minutes', minutesInterval: 1 }] } }, [0, 480], { notes: 'Ops portal: HubSpot has no webhook sender here (no Operations Hub). Every minute this looks for deals whose Print action is not None and runs the same staff-action steps as the sandbox webhook.', notesInFlow: true });
 add('Report link webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'GET', path: cfg.report_path, responseMode: 'responseNode', options: {} }, [0, 660], { notes: 'Called by the Cardiff print gateway, not by people. Public by design: every link is signed and expires. Use the PRODUCTION url (https://automation.lalu.co.uk/webhook/' + cfg.report_path + ').', notesInFlow: true });
 flowSet('Flow: print', 'print', [220, 120]); add('Flow: print scheduled', 'n8n-nodes-base.set', 3.4, { assignments: { assignments: [{ id: uid(), name: 'flow', value: 'print', type: 'string' }, { id: uid(), name: 'scheduled', value: true, type: 'boolean' }] }, includeOtherFields: true, options: {} }, [220, 0]); flowSet('Flow: stuck', 'stuck', [220, 300]); flowSet('Flow: staff', 'staff', [220, 480]); flowSet('Flow: link', 'link', [220, 660]);
-link('Weekday 08:30 print run', 'Flow: print scheduled'); link('Manual print run', 'Flow: print'); link('Every 15 min stuck check', 'Flow: stuck'); link(LIVE ? 'Staff action poll (every minute)' : 'Staff action webhook', 'Flow: staff'); if (!LIVE) { add('Staff: reply 200', 'n8n-nodes-base.respondToWebhook', 1.1, { respondWith: 'text', responseBody: 'ok', options: { responseCode: 200 } }, [220, 560], { notes: 'Replies 200 to HubSpot straight away, then the staff flow carries on. Needed because the workflow also has Respond to Webhook nodes for the report link flow.', notesInFlow: true }); link('Staff action webhook', 'Staff: reply 200'); } link('Report link webhook', 'Flow: link');
+link('Weekday print run (every 30 min)', 'Flow: print scheduled'); link('Manual print run', 'Flow: print'); link('Every 15 min stuck check', 'Flow: stuck'); link(LIVE ? 'Staff action poll (every minute)' : 'Staff action webhook', 'Flow: staff'); if (!LIVE) { add('Staff: reply 200', 'n8n-nodes-base.respondToWebhook', 1.1, { respondWith: 'text', responseBody: 'ok', options: { responseCode: 200 } }, [220, 560], { notes: 'Replies 200 to HubSpot straight away, then the staff flow carries on. Needed because the workflow also has Respond to Webhook nodes for the report link flow.', notesInFlow: true }); link('Staff action webhook', 'Staff: reply 200'); } link('Report link webhook', 'Flow: link');
 add('Config', 'n8n-nodes-base.set', 3.4, { mode: 'raw', jsonOutput: JSON.stringify({ cfg }, null, 2), includeOtherFields: true, options: {} }, [440, 300], { notes: 'ALL settings live here. Replace every REPLACE_ value: link_secret = a long random string (32+ characters). emr_base = EMR+ host (only the Report link flow uses it; leave the placeholder until you have it). emr_mode "dummy" serves clearly labelled dummy PDFs for testing; "live" fetches real reports.', notesInFlow: true });
 ['Flow: print', 'Flow: print scheduled', 'Flow: stuck', 'Flow: staff', 'Flow: link'].forEach(f => link(f, 'Config'));
 code('Check config', CODE.check_config, [660, 300]);

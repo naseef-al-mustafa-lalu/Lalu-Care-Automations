@@ -14,33 +14,55 @@ const HELPERS = String.raw`const now=Date.now(); const nowISO=new Date(now).toIS
 const age=t=>{ if(!t) return Infinity; const d=/^\d+$/.test(String(t))?new Date(Number(t)):new Date(t); return isNaN(d)?Infinity:(now-d.getTime())/60000; };
 const typeOf=p=>c.report_types[String(p[F.report_type]||'').trim()];
 const isIssue=st=>Object.values(c.issue_stages).includes(st);
-const handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)||isIssue(p.dealstage)){ const t=typeOf(p); if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.to_be_sent_stage; } };
+const handoff=(p,pr)=>{ if(c.awaiting_print_stages.includes(p.dealstage)||isIssue(p.dealstage)){ const t=typeOf(p); if(t==='PIP') pr.dealstage=c.pip_invoicing_stage; else if(t) pr.dealstage=c.completed_stage; } };
 const toIssue=(p,pr)=>{ const t=typeOf(p); if(t&&c.awaiting_print_stages.includes(p.dealstage)) pr.dealstage=c.issue_stages[t]; };
 const backToQueue=(p,pr)=>{ const t=typeOf(p); if(t&&isIssue(p.dealstage)) pr.dealstage=c.awaiting_stage_by_type[t]; };`;
 
 // ------------------------------------------------------------------ print run
 CODE.stop_if_blocked = String.raw`const n=Number(($input.first().json||{}).total||0);
-if(n>0) throw new Error('PRINT_RUN_BLOCKED: '+n+' deal(s) are still Preparing from an earlier run. The stuck check flags them as Needs attention after the timeout; check the printer queue, then re-run.');
+if(n>0){
+  let sched=false; try{ sched=$('Working day?').first().json.scheduled===true; }catch(e){}
+  if(sched){ const d=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London'}).format(new Date()); const sd=$getWorkflowStaticData('global'); if(sd.blocked_alert_day===d) return []; sd.blocked_alert_day=d; }
+  throw new Error('PRINT_RUN_BLOCKED: '+n+' deal(s) are still Preparing from an earlier run. The stuck check flags them as Needs attention after the timeout; check the printer queue, then re-run.');
+}
 return [{json:{ok:true}}];`;
 
 CODE.working_day = String.raw`const c=$('Config').first().json.cfg; const it=$input.first();
 if(!it.json.scheduled) return [it];
 const d=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London'}).format(new Date());
+const hm=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
 const dow=new Date(d+'T12:00:00Z').getUTCDay();
 if(dow===0||dow===6) return [];
 if((c.bank_holidays||[]).includes(d)) return [];
+if(hm<c.run_start_time||hm>c.retry_until_time) return [];
+const sd=$getWorkflowStaticData('global');
+if(sd.ran_day===d) return [];
 return [it];`;
 
 CODE.printer_ready = String.raw`const c=$('Config').first().json.cfg;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=r.body||{};
-const notes=[];
-const stop=(why)=>{ if(c.dry_run===true){ notes.push(why); return; } throw new Error('PRINTER_NOT_READY: '+why+'. Nothing was claimed or printed; deals stay Queued. Fix the printer, then start a manual run.'); };
+let sched=false; try{ sched=$('Working day?').first().json.scheduled===true; }catch(e){}
+const problems=[]; const stop=(why)=>{ if(!problems.length) problems.push(why); };
 if(sc!==200) stop('the print gateway is unreachable or returned HTTP '+(sc||'no response'));
 const sp=String(b.spoolerStatus||''); const q=String(b.printerQueue||'');
 const state=(String(b.status||'')==='online'&&sp==='Running')?'ready':(String(b.status||'')==='online'?'spooler_'+sp.toLowerCase():String(b.status||'unknown'));
-if(state!=='ready') stop('print gateway reports status "'+(b.status||'unknown')+'", spooler "'+(sp||'unknown')+'"');
-const ps=String(b.printerStatus||''); if(ps&&ps.toLowerCase()!=='normal') stop('printer status is "'+ps+'"');
-if(c.printer_queue&&q&&q!==c.printer_queue) stop('gateway queue is "'+q+'", expected "'+c.printer_queue+'"');
+if(!problems.length&&state!=='ready') stop('print gateway reports status "'+(b.status||'unknown')+'", spooler "'+(sp||'unknown')+'"');
+const ps=String(b.printerStatus||''); if(!problems.length&&ps&&ps.toLowerCase()!=='normal') stop('printer status is "'+ps+'"');
+if(!problems.length&&c.printer_queue&&q&&q!==c.printer_queue) stop('gateway queue is "'+q+'", expected "'+c.printer_queue+'"');
+const notes=[]; const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London'}).format(new Date());
+if(problems.length){
+  const why=problems[0];
+  if(c.dry_run===true){ notes.push(why); }
+  else if(!sched){ throw new Error('PRINTER_NOT_READY: '+why+'. Nothing was claimed or printed; deals stay Queued. Fix the printer, then start a manual run.'); }
+  else {
+    const hm=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
+    const sd=$getWorkflowStaticData('global');
+    if(hm>=c.retry_until_time){ throw new Error('PRINTER_NOT_READY_GAVE_UP: '+why+'. Checked every 30 minutes since '+c.run_start_time+' and it did not come back by '+c.retry_until_time+'. Nothing was claimed or printed; deals stay Queued and the next weekday run will try again. Fix the printer, then start a manual run if it cannot wait.'); }
+    if(sd.offline_alert_day!==day){ sd.offline_alert_day=day; throw new Error('PRINTER_NOT_READY_WILL_RETRY: '+why+'. Nothing was claimed or printed. n8n checks again every 30 minutes until '+c.retry_until_time+' and runs the batches once the printer is online.'); }
+    return [];
+  }
+}
+if(sched){ $getWorkflowStaticData('global').ran_day=day; }
 const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
 const offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;
 const day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;
@@ -188,7 +210,7 @@ const upd=o.updates.map(u=>{ const t=im.get(String(u.id)); if(t&&stage.has(Strin
 for(const h of o.handoff){
   const pr={...h.properties};
   if(!stage.has(h.id)){ pr[F.hold]='true'; pr[F.issue]='Printed. The stage handoff was not applied because the deal could not be read. Use Resolve problem to hand off.'; }
-  else if(c.awaiting_print_stages.includes(stage.get(h.id))||Object.values(c.issue_stages).includes(stage.get(h.id))){ pr.dealstage=(h.report_type==='PIP')?c.pip_invoicing_stage:c.to_be_sent_stage; }
+  else if(c.awaiting_print_stages.includes(stage.get(h.id))||Object.values(c.issue_stages).includes(stage.get(h.id))){ pr.dealstage=(h.report_type==='PIP')?c.pip_invoicing_stage:c.completed_stage; }
   upd.push({id:h.id,properties:pr});
 }
 const out=[]; for(let i=0;i<upd.length;i+=100) out.push({json:{inputs:upd.slice(i,i+100)}});
