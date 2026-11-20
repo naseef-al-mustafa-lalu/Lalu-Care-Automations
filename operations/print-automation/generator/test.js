@@ -98,16 +98,15 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(byId['1'].print_status === 'preparing' && byId['1'].dispatch_hold_printing === 'true' && byId['1'].printer_job_reference === packs[1].cases[0].job_id, 'claim props use the report job id');
   ok(byId['5'].print_status === 'needs_attention' && /Destination address is empty/.test(byId['5'].print_issue), 'empty destination rejected');
   ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /Destination address is empty/.test(byId['8'].print_issue), 'invalid cases explained');
-  // destination standardisation: same recipient written two ways shares one batch; known list maps to the canonical address
-  const sd = (id, addr) => ({ id, properties: { dealstage: 'S_PIP', mediref: '2000' + id, report_type: 'PIP', destination_address: addr } });
-  const stdSel = [mkitem({ deals: [sd(71, 'DWP Leeds,\nPO Box 1, LS1 1AA'), sd(72, 'dwp leeds, po box 1,  LS1  1AA'), sd(73, 'The Old Road Office, M1 2BB'), sd(74, 'Old Rd Office  M1 2BB')] })];
+  // destination: the address is the canonical Third party company address, so the same text means the same recipient (exact match); line breaks are joined with commas
+  const sd = (id, addr, extra) => ({ id, properties: { dealstage: 'S_PIP', mediref: '2000' + id, report_type: 'PIP', destination_address: addr, ...(extra || {}) } });
+  const stdSel = [mkitem({ deals: [sd(71, 'DWP Leeds,\nPO Box 1, LS1 1AA'), sd(72, 'DWP Leeds, PO Box 1, LS1 1AA'), sd(73, 'The Old Road Office, M1 2BB'), sd(74, 'Old Rd Office  M1 2BB')] })];
   const bs = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] } });
-  ok(bs[0].json.packs.length === 2, 'same recipient written two ways shares one batch');
-  const knownCfg = { ...real, destinations: [{ canonical: 'DWP Leeds, PO Box 1, LS1 1AA', match: ['LS1 1AA'] }] };
-  const bk = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: knownCfg });
-  ok(bk[0].json.packs.some(p => p.destination === 'DWP Leeds, PO Box 1, LS1 1AA' && p.cases.length === 2), 'known destination uses the canonical address');
-  const bstrict = await run('Build batches and claim updates', { nodes: { 'Select queued deals': stdSel, 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...knownCfg, require_known_destination: true } });
-  ok(bstrict.flatMap(x => x.json.inputs).filter(u => /not in the known destinations/.test(u.properties.print_issue || '')).length === 2, 'strict mode flags unknown destinations');
+  ok(bs[0].json.packs.length === 3 && bs[0].json.packs.some(p => p.destination === 'DWP Leeds, PO Box 1, LS1 1AA' && p.cases.length === 2), 'identical company address (line breaks joined) shares one batch; different text is a different destination');
+  const noSet = [mkitem({ deals: [sd(81, '', { recipient_company_set: 'No' }), sd(82, '', { recipient_company_set: 'Yes' }), sd(83, '')] })];
+  const bn = await run('Build batches and claim updates', { nodes: { 'Select queued deals': noSet, 'Daily allowance': [mkitem({ allowance: 100 })] } });
+  const bni = Object.fromEntries(bn.flatMap(x => x.json.inputs).map(u => [u.id, u.properties.print_issue]));
+  ok(/No third party company matched/.test(bni['81']) && /linked but it has no address/.test(bni['82']) && /Destination address is empty/.test(bni['83']), 'empty destination gives a reason from recipient_company_set');
   // weekday schedule and bank holidays
   const todayUK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
   const dowUK = new Date(todayUK + 'T12:00:00Z').getUTCDay();

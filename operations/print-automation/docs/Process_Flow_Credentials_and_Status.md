@@ -143,7 +143,7 @@ After successful printing with no open issue:
 | n8n-hosted links fetched by the gateway | Tested with dummy PDFs |
 | Main print workflow rebuilt for this design (links, manifest, 24-per-call, timeout handling) | Built and checked locally (259 checks, manifest PDFs validated). Imported into n8n 4 November; to test with dummy reports. |
 | EMR+ host and API key | Pending (4 November) |
-| Destination property | `destination_address` on the deal (synced from the Third party company). A deal with it empty goes to Needs attention. |
+| Destination property | `destination_address` on the deal (synced from the Third party company). A deal with it empty goes to Needs attention, with a reason from recipient_company_set. |
 | Manifest fields | Proposed above, to confirm |
 | Batch and daily limits | To set (the gateway allows 25 jobs per call; one is the manifest) |
 | Untested: wrong checksum, duplicate job ID, paper jam / out of paper / toner effect on printer status | To test in the pilot |
@@ -184,7 +184,7 @@ Run in the sandbox with dry run on unless marked live. Live tests print real pap
 | Alerts and summary | Put the SMTP credential in place, then run the summary email and the saved HubSpot view | The email arrives with the template content and the view lists Needs attention deals | Sandbox |
 | Weekday schedule | A scheduled run on a date in bank_holidays, then a manual run on the same date | The scheduled run ends quietly and the manual run goes ahead; no scheduled run on a weekend | Sandbox |
 | Ops portal repeat | Repeat the HubSpot checks in the ops portal: properties, stages, Third party association label, destination_address, then the HubSpot credential and hubspot_base | Same results as the sandbox | Ops portal |
-| Destination matching | Queue deals with the same recipient written two ways, then add a known-list entry | One batch with the canonical address; with require_known_destination on, an unknown address goes to Needs attention | Sandbox |
+| Destination grouping | Queue deals for the same company address and for a different one; queue a deal with no destination | The same address shares one batch, a different address is a separate batch; an empty destination goes to Needs attention with a reason from recipient_company_set | Sandbox |
 | Hand-print fallback | Hand-print a Queued test case | Without recording it a dry run picks it up again; after Printed manually with a note it does not | Sandbox |
 | Report type values | Compare the report type values on the ops portal with the Config mapping | They match | Ops portal |
 
@@ -218,8 +218,8 @@ Deal view "Print - Needs attention": filter Print status is any of Needs attenti
 
 ## 12. Destination standardisation and open confirmations (17 November)
 
-- **Destination matching:** the destination is `destination_address` on the deal, synced from the Third party company. n8n compares destinations ignoring case, punctuation, spacing, common abbreviations and the postcode space, so the same recipient written two ways shares one batch. Config holds `destinations` (canonical address plus text to match, such as a postcode or recipient name); a match prints to the canonical address. `require_known_destination` (default false) sends unrecognised addresses to Needs attention. Limitation: versions that differ in other ways still make two batches until added to the list.
-- **Third party company link:** n8n never creates it. Proposed owner: whoever moves the deal into an awaiting-printing stage. To confirm with Emily and ops.
+- **Destination:** `destination_address` on the deal is a read-only calculated property. It takes the canonical address from the associated Third party company, not the scanned text (checked on 375 deals in the awaiting-printing stages: 10 distinct destinations, none equal to the scanned address). The HubSpot workflow "Auto-triage associated 3rd party company" creates the association: when a deal in the Commencement pipeline has `company_address` known, it associates the company whose `company_address` matches, then tries `alternative_address`, and sets `recipient_company_set` to Yes or No. n8n therefore groups by the exact destination text, one batch per destination. A known-destinations list and address normalisation are not needed and were removed.
+- **Third party company link:** done automatically by the HubSpot workflow above, so no one links it by hand. A deal whose scanned address matches no company gets `recipient_company_set` = No and no destination. n8n sends it to Needs attention with the reason; ops add the scanned wording to the right company as an alternative address, or create the company, then use Print / reprint. Still to check: deals marked Yes that have no destination (the linked company has no address, or the sync is not feeding the property).
 - **Case and submission reference:** entered by hand today. Confirmed: the submission reference cannot be empty on a live deal.
 - **Report type:** comes from UAT. The values match the ops portal. The sandbox N8N Trigger workflow lists `DWP - UC-113`, `DWP - PIP`, `DWP - Health Assessment Advisory Service`; the print workflow maps `PIP`, `UC&ESA`, `Health Assessment Advisory Service`. 
 - **Stage moves:** not n8n. In the ops portal the published workflow "eMR+ Fulfillment 1 - sort deals into stages based on report type" moves deals out of Clinician Signed Off. The sandbox also has an "N8N Trigger" workflow (sets Send to N8N = Yes). There is no such workflow in the ops portal, so it is treated as a sandbox-only experiment; the Lalu Print queue workflow is the one carried over.
@@ -230,5 +230,4 @@ Deal view "Print - Needs attention": filter Print status is any of Needs attenti
 
 - **Schedule:** the scheduled run is Monday to Friday, first check at 08:30 (Europe/London) then every 30 minutes until the printer is online or 16:30 (Config run_start_time and retry_until_time), once a day and skips dates listed in Config `bank_holidays` (YYYY-MM-DD, update each year). A manual run ignores the list. A "Working day?" node does the check.
 - **Wrong medi ref:** a missing or non-numeric medi ref is flagged before queuing. A medi ref that EMR+ cannot match to the deal (wrong, copied from another case, or the instruction is not linked to the deal's submission reference) returns 400 or 404; the Print issue on the deal says what to check and correct, then use Print / reprint. EMR+ only returns a report for an instruction linked to that deal, so a medi ref copied from another case cannot print the wrong report.
-- **Known destinations to confirm (Appendix C of the Google Doc):** Serco, Maximus and Ingeus share one mail unit (WV99 1AH); the other six addresses need standard addresses from the team. One entry ("Centre for Health and Disability Assessments") names no site and cannot be matched.
 - **Open tasks:** kept in Appendix B of the Google Doc (all Incomplete).
