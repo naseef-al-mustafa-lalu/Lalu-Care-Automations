@@ -51,7 +51,8 @@ const cfg = {
     action_none: 'none', action_problem: 'report_problem', action_resolve: 'resolve_problem', action_print: 'print_reprint', action_manual: 'printed_manually'
   },
   report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA' },
-  preparing_timeout_minutes: 60
+  preparing_timeout_minutes: 60,
+  gateway_timeout_minutes: 15, // how long n8n waits for the gateway to answer one print call before treating the result as unknown
 };
 
 // ---------- helpers ----------
@@ -110,7 +111,7 @@ add('Next batch', 'n8n-nodes-base.splitInBatches', 3, { batchSize: 1, options: {
 code('Build job links', CODE.build_job_links, [3520, 0], 'One item per print job: the manifest first, then each report. Each gets signed text.');
 add('Sign links', 'n8n-nodes-base.crypto', 1, { action: 'hmac', type: 'SHA256', value: '={{ $json.payload }}', dataPropertyName: 'sig', secret: `={{ ${C}.link_secret }}`, encoding: 'hex' }, [3740, 0], { notes: 'HMAC-SHA256 of each link with link_secret. The Report link flow checks it.', notesInFlow: true });
 code('Build print request', CODE.build_print_request, [3960, 0]);
-add('Submit to gateway', 'n8n-nodes-base.httpRequest', 4.2, { method: 'POST', url: `={{ ${C}.gateway_base + '/print-jobs' }}`, ...HDR, sendBody: true, specifyBody: 'json', jsonBody: '={{ $json.body }}', options: { timeout: 900000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, [4180, 0], { onError: 'continueRegularOutput', notes: 'NO retries here: a retry could print twice. A timeout can still print (seen in testing), so it is treated as "result unknown".', notesInFlow: true });
+add('Submit to gateway', 'n8n-nodes-base.httpRequest', 4.2, { method: 'POST', url: `={{ ${C}.gateway_base + '/print-jobs' }}`, ...HDR, sendBody: true, specifyBody: 'json', jsonBody: '={{ $json.body }}', options: { timeout: `={{ Number(${C}.gateway_timeout_minutes || 15) * 60000 }}`, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, [4180, 0], { onError: 'continueRegularOutput', notes: 'NO retries here: a retry could print twice. A timeout can still print (seen in testing), so it is treated as "result unknown".', notesInFlow: true });
 code('Print outcome', CODE.print_outcome, [4400, 0], 'Reads batchStatus and each job result / errorCode. Unknown or rejected => deals Needs attention and the run stops.');
 hsPost('Read current stages', '/crm/v3/objects/deals/batch/read', "={{ {properties:['dealstage'],inputs:$json.read_inputs} }}", [4620, 0], { response: { response: { fullResponse: true, neverError: true } } }, { retryOnFail: false });
 code('Build result updates', CODE.build_result_updates, [4840, 0], 'Stage handoff only if the deal is still at an awaiting-printing stage right now.');

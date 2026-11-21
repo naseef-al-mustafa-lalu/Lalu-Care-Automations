@@ -23,7 +23,7 @@ ok(cfg.link_secret === 'REPLACE_LINK_SECRET' && cfg.emr_base === 'https://laluca
 // single entry per flow, 4-way route
 const route = wf.nodes.find(n => n.name === 'Route'); ok(route.parameters.rules.values.length === 4, 'four flows');
 const trg = wf.nodes.find(n => n.name === 'Weekday print run (every 30 min)'); ok(trg.parameters.rule.interval[0].expression === '0,30 8-16 * * 1-5' && wf.settings.timezone === 'Europe/London', 'every 30 minutes 08:00-16:30 UK, Monday to Friday (window set in Config)');
-ok(wf.nodes.find(n => n.name === 'Submit to gateway').parameters.options.timeout >= 600000, 'long gateway timeout');
+ok(/gateway_timeout_minutes/.test(wf.nodes.find(n => n.name === 'Submit to gateway').parameters.options.timeout) && JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg.gateway_timeout_minutes >= 10, 'gateway timeout comes from Config (default 15 minutes)');
 ok(!wf.nodes.find(n => n.name === 'Submit to gateway').retryOnFail, 'no retry on the print call');
 ok(wf.nodes.find(n => n.name === 'Report link webhook').parameters.responseMode === 'responseNode', 'link webhook replies from a node');
 // every Respond to Webhook branch ends a link-flow path

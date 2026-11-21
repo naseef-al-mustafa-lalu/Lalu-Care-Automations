@@ -63,6 +63,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 - `max_reports_per_day` (default 200): reports per day, counted from deals with a Print submitted at date today (UK time), oldest queued first. The rest wait for tomorrow.
 - `link_valid_minutes` (default 30): how long a report link works. A call of 25 jobs takes about 3 minutes at about 6 s per job.
 - `preparing_timeout_minutes` (default 60).
+- `gateway_timeout_minutes` (default 15): how long n8n waits for the gateway to answer one print call before the result is treated as unknown.
 
 ## Cardiff print gateway (CRD-PRINT-GW01, 10.0.60.33:8787)
 - `GET /health` returns `status`, `spoolerStatus`, `printerQueue`, `printerStatus`. `POST /print-jobs` takes JSON with a `documentUrl` per job that the gateway downloads itself. Header `X-Print-Agent-Token`. PDF only, 150 MB per file, 25 jobs per call, 5 copies, queue `CRD-PRN-01-AUTO` only.
