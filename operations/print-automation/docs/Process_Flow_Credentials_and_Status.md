@@ -182,6 +182,10 @@ Run in the sandbox with dry run on unless marked live. Live tests print real pap
 | Network | Gateway fetches report links from n8n; EMR+ accepts the n8n address | Done in testing | Done |
 | Execution data | Confirm n8n execution data does not keep PDF content (see the tracker for the 25 November change) | No PDF content is kept | n8n settings |
 | Alerts and summary | Put the SMTP credential in place, then run the summary email and the saved HubSpot view | The email arrives with the template content and the view lists Needs attention deals | Sandbox |
+| Printer offline retry | Make the printer check fail on a scheduled run before 16:30, then bring it back | Alert on the first offline check only; retried every 30 minutes; runs the batches once online; at 16:30 a "gave up" alert and a quiet end | Live (needs the gateway offline) |
+| Once a day | Run a scheduled tick after the day's run has finished | Later ticks end quietly; a manual run still goes ahead | Sandbox |
+| Printer state after a timeout | Cause a timeout on a live print (pause the Cardiff queue) | The Print issue says "result unknown" with the printer and spooler state from /health, or that the gateway did not answer | Live print |
+| Gateway timeout setting | Change gateway_timeout_minutes in Config | The next print call waits for that many minutes | Sandbox |
 | Weekday schedule | A scheduled run on a date in bank_holidays, then a manual run on the same date | The scheduled run ends quietly and the manual run goes ahead; no scheduled run on a weekend | Sandbox |
 | Ops portal repeat | Repeat the HubSpot checks in the ops portal: properties, stages, Third party association label, destination_address, then the HubSpot credential and hubspot_base | Same results as the sandbox | Ops portal |
 | Destination grouping | Queue deals for the same company address and for a different one; queue a deal with no destination | The same address shares one batch, a different address is a separate batch; an empty destination goes to Needs attention with a reason from recipient_company_set | Sandbox |
