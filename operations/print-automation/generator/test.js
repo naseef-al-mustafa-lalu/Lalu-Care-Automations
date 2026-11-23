@@ -329,14 +329,14 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   execSync('node build.js', { cwd: __dirname, env: { ...process.env, PRINT_ENV: 'live' } });
   const lw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'n8n', 'Lalu_Print_OpsPortal.json'), 'utf8'));
   const lnames = lw.nodes.map(n => n.name);
-  ok(!lnames.includes('Staff action webhook') && lnames.includes('Staff action poll (every minute)'), 'ops build: poll replaces the staff webhook');
+  ok(lnames.includes('Staff action webhook') && lnames.includes('Staff action poll (every minute)') && lnames.includes('Staff event from webhook?'), 'ops build: webhook is the main staff trigger, poll stays as a safety net');
   const lweb = lw.nodes.filter(n => n.type === 'n8n-nodes-base.webhook');
-  ok(lweb.length === 1 && lweb[0].parameters.path === 'lalu-report-ops', 'ops build: only the report link webhook, on its own path');
+  ok(lweb.length === 2 && lweb.some(n => n.parameters.path === 'lalu-report-ops') && lweb.some(n => n.parameters.path === 'lalu-print-action-ops'), 'ops build: report link and staff action webhooks, each on its own ops path');
   ok(wf.nodes.find(n => n.name === 'Report link webhook').parameters.path === 'lalu-report', 'sandbox keeps lalu-report');
   const lcfg = JSON.parse(lw.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg;
   ok(lcfg.environment === 'live' && lcfg.report_path === 'lalu-report-ops' && lcfg.dry_run === true, 'ops build: Config is live, own report path, dry run on');
   ok(lw.active === false, 'ops build is inactive');
-  ok(!lnames.includes('Staff: reply 200') && !lnames.includes('Read staff request') && !JSON.stringify(lw.connections).includes('Staff action webhook') && !Object.keys(lw.connections).includes('Staff action webhook'), 'ops build: no leftover webhook nodes or links');
+  ok(lnames.includes('Staff: reply 200') && lnames.includes('Read staff request') && lw.connections['Staff event from webhook?'].main[0][0].node === 'Read staff request' && lw.connections['Staff event from webhook?'].main[1][0].node === 'Find staff requests', 'ops build: webhook events go to Read staff request, the poll goes to Find staff requests');
   const known = new Set(lnames); ok(Object.entries(lw.connections).every(([k, v]) => known.has(k) && v.main.every(o => o.every(t => known.has(t.node)))), 'ops build: every connection points at an existing node');
   const pollCode = lw.nodes.find(n => n.name === 'Staff requests to deals').parameters.jsCode;
   const pollRun = (items) => new Function('$', '$input', pollCode)(() => ({ first: () => ({ json: { cfg: lcfg } }) }), { all: () => items });
