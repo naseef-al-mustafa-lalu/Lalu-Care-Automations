@@ -122,7 +122,8 @@ link('Route', 'Working day?', 0); link('Working day?', 'Guard: any Preparing dea
 chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
 link('Next batch', 'Build job links', 1);
 chain('Build job links', 'Sign links', 'Build print request');
-chain('Submit to gateway', 'Print outcome', 'Read current stages', 'Build result updates', 'Write print results', 'Stop if printer result unsafe');
+add('Printer check after answer', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: `={{ ${C}.gateway_base + '/health' }}`, ...HDR, options: { timeout: 15000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, [4400, 0], { onError: 'continueRegularOutput', notes: 'Pings the gateway health endpoint after every submit. Only used to describe the printer state when the print result is unknown (timeout); no gateway change needed.', notesInFlow: true });
+chain('Submit to gateway', 'Printer check after answer', 'Print outcome', 'Read current stages', 'Build result updates', 'Write print results', 'Stop if printer result unsafe');
 link('Stop if printer result unsafe', 'Next batch');
 
 // ---------- FLOW 2: STUCK CHECK ----------

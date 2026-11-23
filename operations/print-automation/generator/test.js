@@ -239,7 +239,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
 
   // ---- gateway answer handling
   const meta = { pack_ref: pack.submission_ref, manifest_job_id: pack.submission_ref + '-M', cases: pack.cases.map(k => ({ deal_id: k.deal_id, job_id: k.job_id, report_type: k.report_type })), started_iso: '2026-11-04T08:30:00.000Z' };
-  const oc = (r) => run('Print outcome', { input: [mkitem(r)], nodes: { 'Build print request': [mkitem({ meta })] } });
+  const oc = (r, h = { statusCode: 200, body: { status: 'ok', printerStatus: 'Normal', spoolerStatus: 'Running' } }) => run('Print outcome', { input: [mkitem(h)], nodes: { 'Build print request': [mkitem({ meta })], 'Submit to gateway': [mkitem(r)] } });
   const res = (...pairs) => pairs.map(([id, ok_, msg]) => ok_ ? { jobId: id, status: 'completed' } : { jobId: id, status: 'failed', errorCode: 'PRINT_JOB_FAILED', errorMessage: msg });
   const allIds = [meta.manifest_job_id, ...meta.cases.map(k => k.job_id)];
   let o = (await oc({ statusCode: 200, body: { accepted: true, batchStatus: 'completed', jobsReceived: allIds.length, jobsCompleted: allIds.length, jobsFailed: 0, results: allIds.map(id => ({ jobId: id, status: 'completed' })) } }))[0].json;
@@ -258,6 +258,8 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(o.handoff.length === 0 && o.updates.length === meta.cases.length && o.updates.every(u => u.properties.print_status === 'printed' && u.properties.dispatch_hold_printing === 'true' && /manifest sheet did not print/.test(u.properties.print_issue)), 'manifest failed: printed but held with an issue');
   o = (await oc({ statusCode: 200, body: { batchStatus: 'failed', jobsFailed: allIds.length, results: allIds.map(id => ({ jobId: id, status: 'failed', errorCode: 'PRINT_JOB_FAILED', errorMessage: '(403) forbidden' })) } }))[0].json; ok(o.all_failed_403, 'all 403 detected');
   o = (await oc({ error: { message: 'timeout of 900000ms exceeded' } }))[0].json; ok(o.unsafe && o.kind === 'unknown' && o.updates.length === meta.cases.length && /result unknown/.test(o.updates[0].properties.print_issue) && o.updates[0].properties.dispatch_hold_printing === 'true' && o.handoff.length === 0, 'timeout = unknown, nothing marked printed');
+  ok(/printer Normal, spooler Running/.test(o.updates[0].properties.print_issue), 'timeout issue includes printer state from the ping');
+  { const o2 = (await oc({ error: { message: 'timeout' } }, { statusCode: 0 }))[0].json; ok(/may be offline/.test(o2.updates[0].properties.print_issue), 'no ping answer says gateway may be offline'); }
   o = (await oc({ statusCode: 502, body: {} }))[0].json; ok(o.kind === 'unknown', '502 = unknown');
   o = (await oc({ statusCode: 401, body: { accepted: false, errorCode: 'UNAUTHORISED' } }))[0].json; ok(o.unsafe && o.kind === 'rejected' && /rejected the batch/.test(o.updates[0].properties.print_issue), '401 = rejected');
   o = (await oc({ statusCode: 500, body: { accepted: false, errorCode: 'API_ERROR' } }))[0].json; ok(o.kind === 'rejected', '500 accepted:false = rejected');
