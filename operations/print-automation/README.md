@@ -33,7 +33,7 @@ One per call, printed first: batch ID, print call and part (for example part 2 o
 | One report failed (EMR+ error, bad link, printer error) | that deal Needs attention with the reason | continues |
 | Manifest failed but reports printed | Printed but hold stays, issue says check the stack | continues |
 | Gateway rejected the call (401, 500 `accepted:false`) | Needs attention | stops, alert |
-| Timeout / no answer / 5xx | Needs attention, "result unknown" | stops, alert. **Never resent automatically** |
+| Timeout / no answer / 5xx | Needs attention, "result unknown" plus the printer state from a `/health` check made straight afterwards | stops, alert. **Never resent automatically** |
 | Every report refused by EMR+ (403) | Needs attention | stops, alert |
 
 EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching case, 409 not completed / not available / too large, 403 key or IP refused, 410 link expired, 422 bad link, 413 over 150 MB, 503 rate limited / unreachable / not configured, 502 other.
@@ -69,7 +69,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 - `GET /health` returns `status`, `spoolerStatus`, `printerQueue`, `printerStatus`. `POST /print-jobs` takes JSON with a `documentUrl` per job that the gateway downloads itself. Header `X-Print-Agent-Token`. PDF only, 150 MB per file, 25 jobs per call, 5 copies, queue `CRD-PRN-01-AUTO` only.
 - n8n runs on Google Cloud (34.142.83.45) and cannot reach private addresses by default. 10.0.60.33 works.
 - Jobs are processed in order, one at a time. About 6 s per job after IT's fix on 3 Nov (it was about 126 s).
-- Failures return HTTP 200 with `batchStatus: failed`, `jobsFailed` and `results[].errorCode`. A call can time out and still print, so a timeout is "result unknown", never "failed".
+- Failures return HTTP 200 with `batchStatus: failed`, `jobsFailed` and `results[].errorCode`. A call can time out and still print, so a timeout is "result unknown", never "failed". After every submit n8n calls the existing `GET /health` once; the Print issue on an unknown result then says whether the printer and spooler looked normal or the gateway did not answer. No gateway change is needed.
 
 ### Gateway test results (2 to 3 Nov 2026)
 | Test | Result |

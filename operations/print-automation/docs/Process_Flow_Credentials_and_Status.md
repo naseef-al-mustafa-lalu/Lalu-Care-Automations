@@ -124,7 +124,7 @@ After successful printing with no open issue:
 | EMR+ rejects the key or IP address (403) | Needs attention on the affected cases | The run stops and the team is alerted. Fix the key or the IP allow-list, then reprint. Tell Naseef: this is a credentials issue. |
 | EMR+ rate limit or server error (429, 500) | Needs attention if it continues | 429: n8n waits 60 seconds and retries up to twice. 500: n8n waits 30 seconds and retries once. If it still fails the job fails as above: for 429 try again later, for 500 ask Emily to check Sentry. |
 | Link expired, already used, or the gateway cannot reach n8n | Needs attention, reason in Print issue | The job fails. A reprint creates new links. |
-| Call times out | Needs attention, result unknown | Never resent automatically. Staff check the printer output and queue, then Resolve problem or Print / reprint. |
+| Call times out | Needs attention, result unknown, with the printer state from a health check made straight afterwards (for example "printer Normal, spooler Running", or "gateway did not answer") | Never resent automatically. Staff check the printer output and queue, then Resolve problem or Print / reprint. |
 | Manifest cannot be built | Needs attention | That destination is not sent. Other destinations continue. |
 | n8n restarts during a run | Left in Preparing or Sent to printer | Nothing is resent automatically. Staff check the output, then use Print / reprint. |
 | Daily limit reached | Stays Queued | Remaining cases wait for the next run, oldest first. |
