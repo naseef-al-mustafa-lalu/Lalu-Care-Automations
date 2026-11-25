@@ -51,8 +51,9 @@ const cfg = {
     action_none: 'none', action_problem: 'report_problem', action_resolve: 'resolve_problem', action_print: 'print_reprint', action_manual: 'printed_manually'
   },
   report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA' },
+  print_enabled: { PIP: false, UC: true, HAA: true, DLA: false }, // one switch per report type. false = deals of that type are left Queued and untouched until you switch it back on. PIP is off for now. DLA has no effect until its report type and stages are set up (it is not printed today)
   preparing_timeout_minutes: 60,
-  gateway_timeout_minutes: 15, // how long n8n waits for the gateway to answer one print call before treating the result as unknown
+  gateway_timeout_minutes: 30, // how long n8n waits for the gateway to answer one print call (one batch of up to 20 reports) before treating the result as unknown. A 20-report HSA batch took 15 min on 25 Nov, so 15 was too short
 };
 
 // ---------- helpers ----------
@@ -104,13 +105,17 @@ code('Printer ready?', CODE.printer_ready, [1540, 40], 'Online + spooler Running
 search('Count sent today', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.submitted_at,operator:'GTE',value:$json.day_start_ms}]`, [1760, 40], false);
 code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day minus reports already printed today. 0 left => run ends quietly.');
 code('Select queued deals', CODE.select_queued, [1760, -120]);
-code('List deals to check', CODE.list_checks, [1980, -120], 'Lists the deals that will be checked against EMR+ (up to the daily allowance plus 20).');
 add('Check report in EMR+ (no download)', 'n8n-nodes-base.httpRequest', 4.2, { method: 'HEAD', url: "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $json.mediref + '/completed_report/?hubspot_deal_id=' + $json.deal_id }}", ...HDR, options: { timeout: 30000, batching: { batch: { batchSize: 4, batchInterval: 250 } }, response: { response: { fullResponse: true, neverError: true, responseFormat: 'text' } } } }, [2200, -120], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Same Header Auth credential as Fetch report from EMR+. HEAD request: nothing is downloaded or stored. 200 = report is there, 404 = medi ref not linked to the deal, 409 = not ready.', notesInFlow: true });
-code('Apply report checks', CODE.apply_checks, [2420, -120], 'Deals whose report is missing or not linked go to Needs attention with the reason and never reach the manifest. Deals EMR+ could not answer for stay Queued. 403 stops the run with an alert.');
 code('Build batches and claim updates', CODE.build_packs, [2640, -120], 'Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (set in Config, currently 20; gateway ceiling 24).');
 hsPost('Claim deals', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [2860, -120]);
 code('List batches', CODE.list_packs, [3080, -120]);
 add('Next batch', 'n8n-nodes-base.splitInBatches', 3, { batchSize: 1, options: {} }, [3300, -120], { notes: 'Output 1 (loop) = next batch. Output 0 (done) = finished.', notesInFlow: true });
+code('List pack deals to check', CODE.list_checks, [3520, -240], 'This batch only: one item per report so each gets its own HEAD request just before the batch prints.');
+code('Apply batch check', CODE.apply_checks, [3960, -240], 'Reports that are missing or not linked go to Needs attention and come off this batch (and its manifest). EMR+ not answering puts the deal back to Queued. 403 puts the batch back and stops the run after the write.');
+add('Has check updates?', 'n8n-nodes-base.if', 2.2, { conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 }, conditions: [{ id: uid(), leftValue: "={{ ($json.updates || []).length > 0 }}", rightValue: '', operator: { type: 'boolean', operation: 'true', singleValue: true } }], combinator: 'and' }, options: {} }, [4180, -240]);
+hsPost('Write check updates', '/crm/v3/objects/deals/batch/update', "={{ {inputs:$json.updates} }}", [4400, -300]);
+code('Pack after checks', CODE.pack_after_checks, [4620, -240], 'Stops the run on an EMR+ access error (after the write); otherwise passes the checked batch on.');
+add('Anything to print?', 'n8n-nodes-base.if', 2.2, { conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 }, conditions: [{ id: uid(), leftValue: "={{ ($json.cases || []).length > 0 }}", rightValue: '', operator: { type: 'boolean', operation: 'true', singleValue: true } }], combinator: 'and' }, options: {} }, [4840, -240]);
 code('Build job links', CODE.build_job_links, [3520, 0], 'One item per print job: the manifest first, then each report. Each gets signed text.');
 add('Sign links', 'n8n-nodes-base.crypto', 1, { action: 'hmac', type: 'SHA256', value: '={{ $json.payload }}', dataPropertyName: 'sig', secret: `={{ ${C}.link_secret }}`, encoding: 'hex' }, [3740, 0], { notes: 'HMAC-SHA256 of each link with link_secret. The Report link flow checks it.', notesInFlow: true });
 code('Build print request', CODE.build_print_request, [3960, 0]);
@@ -122,8 +127,11 @@ hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
 code('Working day?', CODE.working_day, [880, -120], 'Scheduled runs only: ends quietly on a weekend or a date listed in Config bank_holidays (YYYY-MM-DD). Manual runs always continue.');
 link('Route', 'Working day?', 0); link('Working day?', 'Guard: any Preparing deals?');
-chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'List deals to check', 'Check report in EMR+ (no download)', 'Apply report checks', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
-link('Next batch', 'Build job links', 1);
+chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
+chain('List pack deals to check', 'Check report in EMR+ (no download)', 'Apply batch check', 'Has check updates?');
+link('Next batch', 'List pack deals to check', 1);
+link('Has check updates?', 'Write check updates', 0); link('Has check updates?', 'Pack after checks', 1); link('Write check updates', 'Pack after checks');
+link('Pack after checks', 'Anything to print?'); link('Anything to print?', 'Build job links', 0); link('Anything to print?', 'Next batch', 1);
 chain('Build job links', 'Sign links', 'Build print request');
 add('Printer check after answer', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: `={{ ${C}.gateway_base + '/health' }}`, ...HDR, options: { timeout: 15000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, [4400, 0], { onError: 'continueRegularOutput', notes: 'Pings the gateway health endpoint after every submit. Only used to describe the printer state when the print result is unknown (timeout); no gateway change needed.', notesInFlow: true });
 chain('Submit to gateway', 'Printer check after answer', 'Print outcome', 'Read current stages', 'Build result updates', 'Write print results', 'Stop if printer result unsafe');

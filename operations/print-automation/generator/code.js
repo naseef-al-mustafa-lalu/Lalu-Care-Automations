@@ -78,7 +78,9 @@ CODE.select_queued = String.raw`const c=$('Config').first().json.cfg;
 const seen=new Map();
 for(const it of $input.all()) for(const d of (it.json.results||[])) seen.set(String(d.id),d);
 const skip=new Set(c.cancelled_rejected_stages);
-const deals=[...seen.values()].filter(d=>!skip.has((d.properties||{}).dealstage));
+const sw=c.print_enabled||{};
+const off=d=>{ const t=c.report_types[String(((d.properties||{})[c.fields.report_type])||'').trim()]; return !!t&&sw[t]===false; };
+const deals=[...seen.values()].filter(d=>!skip.has((d.properties||{}).dealstage)&&!off(d));
 if(!deals.length) return [];
 const out=[];
 for(let i=0;i<deals.length;i+=100){
@@ -88,54 +90,44 @@ for(let i=0;i<deals.length;i+=100){
 return out;`;
 
 // Checks each report exists in EMR+ before anything is claimed or put on a manifest (HEAD request: nothing is downloaded or stored).
-CODE.list_checks = String.raw`const c=$('Config').first().json.cfg; const F=c.fields;
-const allowance=Number($('Daily allowance').first().json.allowance||0);
-const budget=allowance+20; let used=0;
-const out=[];
-for(const it of $input.all()) for(const d of (it.json.deals||[])){
-  const p=d.properties||{};
-  const mediref=String(p[F.case_ref]||'').trim();
-  const type=c.report_types[String(p[F.report_type]||'').trim()];
-  const dest=String(p[F.dest_source]||'').trim();
-  const eligible=/^\d+$/.test(mediref)&&!!type&&!!dest&&c.emr_mode!=='dummy'&&used<budget;
-  if(eligible) used++;
-  if(eligible) out.push({json:{deal_id:String(d.id),mediref,checked:true}});
-}
-if(!out.length) out.push({json:{deal_id:'0',mediref:'0',checked:false}});
-return out;`;
+// Per batch, just before it prints: one item per case so the HEAD request runs once per report.
+CODE.list_checks = String.raw`const pack=$input.first().json;
+return pack.cases.map(k=>({json:{deal_id:k.deal_id,mediref:k.mediref}}));`;
 
+// Reads the HEAD answers for this batch. Missing / unlinked reports go to Needs attention and are taken off the manifest.
+// EMR+ not answering puts the deal back to Queued (next run). 401/403 puts the whole batch back and stops the run after the write.
 CODE.apply_checks = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
-const listed=$('List deals to check').all().map(i=>i.json);
+const pack=$('Next batch').first().json;
 const res=$input.all().map(i=>i.json||{});
-const deals=$('Select queued deals').all().flatMap(i=>i.json.deals);
-const byId=new Map(deals.map(d=>[String(d.id),d]));
 const maxMb=Number(c.max_report_mb||150); const maxB=maxMb*1000000;
 const why={400:'the case reference (medi ref) is not valid: correct the medi ref on the deal',404:'EMR+ could not match the medi ref to this deal (wrong medi ref, copied from another case, or not linked to this deal\'s submission reference): check the medi ref and submission reference on the deal against the EMR+ instruction',409:'the report is not completed, not available or too large in EMR+: ops to check'};
-const drop=new Set(); const flagged=[]; let checked=0, transient=0;
-listed.forEach((l,i)=>{
-  if(!l.checked) return; checked++;
-  const d=byId.get(l.deal_id); if(!d) return;
+const keep=[]; const updates=[]; let abort='';
+const back=k=>{ const pr={}; pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.batch]=''; pr[F.job_ref]=''; updates.push({id:k.deal_id,properties:pr}); };
+pack.cases.forEach((k,i)=>{
   const r=res[i]||{}; const sc=Number(r.statusCode||0); let bad='';
+  if(abort){ back(k); return; }
   if(sc===200){ const hl=Number(((r.headers||{})['content-length'])||0); if(hl>maxB) bad='the report is '+(hl/1000000).toFixed(1)+' MB, over the limit of '+maxMb+' MB'; }
-  else if(sc===401||sc===403) throw new Error('EMR_ACCESS_REFUSED: EMR+ refused access (HTTP '+sc+') while checking reports. Check the API key and that the n8n IP address is allowed. Nothing was claimed or printed.');
+  else if(sc===401||sc===403){ abort='EMR_ACCESS_REFUSED: EMR+ refused access (HTTP '+sc+') while checking reports. Check the API key and that the n8n IP address is allowed. This batch was not printed and its deals were put back to Queued.'; back(k); return; }
   else if(why[sc]) bad=why[sc]+' (HTTP '+sc+')';
-  else { transient++; drop.add(l.deal_id); return; }
-  if(bad){
-    drop.add(l.deal_id);
-    const p=d.properties||{}; const type=c.report_types[String(p[F.report_type]||'').trim()];
-    const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'. Fix the cause, then use Print / reprint.';
-    if(type&&c.awaiting_print_stages.includes(p.dealstage)) pr.dealstage=c.issue_stages[type];
-    flagged.push({id:l.deal_id,properties:pr});
-  }
+  else { back(k); return; }
+  if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'. Fix the cause, then use Print / reprint.'; const type=k.report_type; if(c.issue_stages[type]) pr.dealstage=c.issue_stages[type]; updates.push({id:k.deal_id,properties:pr}); return; }
+  keep.push(k);
 });
-if(checked&&transient===checked) throw new Error('EMR_UNAVAILABLE: EMR+ did not answer the report checks (rate limited, down or unreachable). Nothing was claimed or printed; deals stay Queued and the next run tries again.');
-const keep=deals.filter(d=>!drop.has(String(d.id)));
-if(!keep.length&&!flagged.length) return [];
-return [{json:{deals:keep,flagged_updates:flagged,checked,not_checked_now:transient}}];`;
+if(abort){ updates.length=0; for(const k of pack.cases) back(k); return [{json:{...pack,cases:[],updates,abort,checked:pack.cases.length,removed:pack.cases.length}}]; }
+const cases=keep.map((k,idx)=>({...k,job_id:pack.submission_ref+'-R'+String(idx+1).padStart(2,'0')}));
+// deals kept on the manifest get the new job reference so HubSpot matches the printed sheet
+for(const k of cases){ const old=pack.cases.find(o=>o.deal_id===k.deal_id); if(old&&old.job_id!==k.job_id){ const pr={}; pr[F.job_ref]=k.job_id; updates.push({id:k.deal_id,properties:pr}); } }
+return [{json:{...pack,cases,updates,abort,checked:pack.cases.length,removed:pack.cases.length-cases.length}}];`;
+
+// After the check write: stop on an access error, otherwise pass the checked pack on.
+CODE.pack_after_checks = String.raw`const j=$('Apply batch check').first().json;
+if(j.abort) throw new Error(j.abort);
+const {updates,abort,checked,removed,...pack}=j;
+return [{json:pack}];`;
 
 // Groups valid cases by destination, splits each destination into calls of reports_per_call, claims the cases.
 CODE.build_packs = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
-const deals=$('Apply report checks').all().flatMap(i=>i.json.deals||[]);
+const deals=$('Select queued deals').all().flatMap(i=>i.json.deals||[]);
 const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
 const batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;
 const when=parts.day+'/'+parts.month+'/'+parts.year+' '+parts.hour+':'+parts.minute;
@@ -143,7 +135,7 @@ const allowance=$('Daily allowance').first().json.allowance;
 const per=Math.max(1,Math.min(24,Number(c.reports_per_call)||20));
 const qt=d=>{ const t=(d.properties||{})[F.queued_at]; const n=/^\d+$/.test(String(t))?Number(t):Date.parse(t); return isNaN(n)?Infinity:n; };
 deals.sort((a,b)=>qt(a)-qt(b));
-const updates=[...$('Apply report checks').all().flatMap(i=>i.json.flagged_updates||[])]; const valid=[];
+const updates=[]; const valid=[];
 for(const d of deals){
   const p=d.properties||{}; const id=String(d.id);
   const mediref=String(p[F.case_ref]||'').trim();
@@ -223,6 +215,7 @@ const reason=x=>{ const msg=String((x&&x.errorMessage)||''); const m=msg.match(/
   if(m&&why[m[1]]) return why[m[1]]+' (HTTP '+m[1]+')';
   if(!msg&&!(x&&x.errorCode)) return 'the printer reported a failure';
   return String(msg||x.errorCode).slice(0,160)+(m?'':'. If this is a connection error, check the gateway can reach automation.lalu.co.uk and the n8n print workflow is active'); };
+const timedOut=!!(r.error&&/timeout|timed out/i.test(String(r.error.message||r.error.code||'')));
 let kind='results';
 if(!sc) kind='unknown';
 else if(sc>=400&&sc<500) kind='rejected';
@@ -249,7 +242,7 @@ for(const k of meta.cases){
   } else if(kind==='rejected'){
     pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='The print gateway rejected the batch (HTTP '+sc+(b.errorCode?', '+b.errorCode:'')+'). Nothing was printed. Fix the connection, then use Print / reprint.';
   } else {
-    pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Print result unknown (no clear answer from the print gateway). Check the paper output and printer queue before any reprint ('+pst+').';
+    pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]=(timedOut?'Print result unknown: n8n stopped waiting for the print gateway after '+Number(c.gateway_timeout_minutes||15)+' minutes (gateway_timeout_minutes in Config), but the printer may have carried on and finished. ':'Print result unknown (no clear answer from the print gateway). ')+'Check the paper output and printer queue before any reprint ('+pst+').';
   }
   if(pr[F.status]===V.issue) issue_moves.push({id:k.deal_id,report_type:k.report_type});
   updates.push({id:k.deal_id,properties:pr});
