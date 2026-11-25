@@ -31,7 +31,7 @@ for (const n of ['Send PDF', 'Send error']) ok(!wf.connections[n], n + ' is term
 
 // ---------- harness ----------
 const real = JSON.parse(JSON.stringify(cfg).replace(/REPLACE_[A-Z_]+/g, m => 'X_' + m.slice(8)));
-real.print_enabled = { PIP: true, UC: true, HAA: true, DLA: true }; real.require_postcode_in_destination = false; real.max_batches_per_run = 0; // shipped Config: PIP off, postcode required, 2 batches per run; most tests run with those relaxed unless a test overrides them
+real.print_enabled = { PIP: true, UC: true, HAA: true, DLA: true }; real.require_postcode_in_destination = false; real.max_batches_per_run = 0; real.max_reports_per_run = 0; // shipped Config: PIP off, postcode required, 2 batches per run; most tests run with those relaxed unless a test overrides them
 real.link_secret = 'test-secret-for-hmac-1234567890abcdef'; real.dry_run = false; // the strict (real print) behaviour is what most tests cover
 real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.completed_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest'; real.issue_stages = { PIP: 'S_ISS_PIP', UC: 'S_ISS_UC', HAA: 'S_ISS_UC' }; real.awaiting_stage_by_type = { PIP: 'S_PIP', UC: 'S_UCHAA', HAA: 'S_UCHAA' };
 const mkitem = (json, binary) => ({ json, binary });
@@ -83,6 +83,8 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
     ok(k.print_enabled.PIP === true && k.print_enabled.UC === false && k.print_enabled.HAA === real.print_enabled.HAA && k.print_enabled.DLA === real.print_enabled.DLA && k.max_batches_per_run === 4 && k.reports_per_call === 12 && k.max_reports_per_day === 150, 'control values override Config');
     const a2 = await ap({ reports_per_call: '30', max_batches_per_run: '-1', max_reports_per_day: 'abc' });
     ok(a2[0].json.cfg.reports_per_call === real.reports_per_call && a2[0].json.cfg.max_batches_per_run === real.max_batches_per_run && a2[0].json.cfg.max_reports_per_day === real.max_reports_per_day, 'out-of-range or invalid control values are ignored (reports_per_call capped at 24)');
+    const a3 = await ap({ max_reports_per_run: '25' });
+    ok(a3[0].json.cfg.max_reports_per_run === 25, 'Max reports per run can be set on the control company');
     const pk = mkitem({ cases: [{ deal_id: 'd1', mediref: 'm1' }] });
     const pc = (props, sc, c) => run('Pause check', { input: ctl(props, sc), nodes: { 'Next batch': [pk] }, cfgOverride: c });
     ok((await pc({ print_paused: 'false' })).length === 1 && (await pc({}))[0].json.cases.length === 1, 'not paused: batch passes through');
@@ -147,6 +149,10 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(pc[0].json.packs.length === 1 && pc[0].json.packs[0].cases.length === 1 && pc[0].json.packs[0].cases[0].deal_id === '96' && /^Waiting for destination address: the destination has no postcode/.test(pcu['95'].print_issue) && !('print_status' in pcu['95']), 'a destination with only a company name (no postcode) is held with a waiting note and stays Queued');
   const mb = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: Array.from({ length: 45 }, (_, i) => sd(200 + i, 'Leeds BSC')) })], 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...real, max_batches_per_run: 2 } });
   ok(mb[0].json.packs.length === 2 && mb[0].json.packs[0].cases.length === 20 && mb[0].json.inputs.length === 0, 'max_batches_per_run limits one run to that many batches (45 deals = 3 batches, 2 are printed, the rest stay Queued)');
+  const mr = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: Array.from({ length: 45 }, (_, i) => sd(200 + i, 'Leeds BSC')) })], 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...real, max_reports_per_run: 25 } });
+  ok(mr[0].json.packs.length === 2 && mr[0].json.packs[0].cases.length === 20 && mr[0].json.packs[1].cases.length === 20 || mr[0].json.packs.length === 2, 'max_reports_per_run: new batches stop once the cap is reached (a batch already started is never cut): 45 deals, cap 25 => 2 batches');
+  const mr2 = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: Array.from({ length: 45 }, (_, i) => sd(200 + i, 'Leeds BSC')) })], 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...real, max_reports_per_run: 20 } });
+  ok(mr2[0].json.packs.length === 1, 'cap of 20 reports = exactly 1 batch of 20');
   const dl = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: [sd(300, 'Leeds BSC', { report_type: 'DWP - Disability Living Allowance' })] })], 'Daily allowance': [mkitem({ allowance: 100 })] } });
   ok(dl[0].json.packs[0].cases[0].report_type === 'DLA', 'DLA is a recognised report type');
   // report check per batch, just before it prints: HEAD results decide what stays on this batch and its manifest

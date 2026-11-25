@@ -170,7 +170,9 @@ for(const [destination,items] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]
   }
 }
 // Deals are claimed (Preparing) one batch at a time, just before that batch prints (Apply batch check), so a long run never leaves later batches looking stuck.
-const maxB=Number(c.max_batches_per_run||0); const run=maxB>0?packs.slice(0,maxB):packs;
+const maxB=Number(c.max_batches_per_run||0); let run=maxB>0?packs.slice(0,maxB):packs;
+const maxR=Number(c.max_reports_per_run||0);
+if(maxR>0){ const keep=[]; let tot=0; for(const pk of run){ if(tot>=maxR) break; keep.push(pk); tot+=pk.cases.length; } run=keep; } // stops starting new batches once this many reports are in the run; a batch already started is never cut
 const out=[];
 for(let i=0;i<updates.length;i+=100) out.push({json:{inputs:updates.slice(i,i+100),packs:run}});
 if(!out.length) out.push({json:{inputs:[],packs:run}});
@@ -461,7 +463,7 @@ const tf={PIP:'printing_on_pip',UC:'printing_on_uc',HAA:'printing_on_hsa',DLA:'p
 c.print_enabled={...(c.print_enabled||{})};
 for(const [t,k] of Object.entries(tf)){ const v=String(p[k]); if(v==='true'||v==='false'){ c.print_enabled[t]=v==='true'; applied.push(k); } }
 const num=(k,min,max,to)=>{ if(!has(p[k])) return; const n=Number(p[k]); if(Number.isInteger(n)&&n>=min&&n<=max){ c[to]=n; applied.push(k); } };
-num('max_batches_per_run',0,1000,'max_batches_per_run'); num('reports_per_call',1,24,'reports_per_call'); num('max_reports_per_day',0,100000,'max_reports_per_day');
+num('max_batches_per_run',0,1000,'max_batches_per_run'); num('max_reports_per_run',0,100000,'max_reports_per_run'); num('reports_per_call',1,24,'reports_per_call'); num('max_reports_per_day',0,100000,'max_reports_per_day');
 return [{json:{...prev,cfg:c,control_applied:applied}}];`;
 
 // Before every batch: still not paused? Passes the batch straight through. Paused or unreadable ends the run; the batch's deals are still Queued.

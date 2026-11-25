@@ -29,7 +29,8 @@ const cfg = {
   retry_until_time: '16:30', // ... every 30 minutes until this time; if the printer is still offline an alert is sent and the next weekday run tries again
   bank_holidays: ['2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'], // England and Wales; dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   link_valid_minutes: 30,
-  max_batches_per_run: 2, // most batches one run will print (each run claims and prints at most this many; the rest stay Queued for the next run). 0 = no limit. Keeps one run within what the output tray holds
+  max_batches_per_run: 0, // most batches one run will print. 0 = no limit (the report cap below is what ends a run)
+  max_reports_per_run: 60, // a run stops starting new batches once this many reports are in it (a batch already started is never cut). 0 = no limit. Keeps one run within what the output tray holds. Ops can change it on the Print control company in HubSpot
   require_postcode_in_destination: true, // a destination with no UK postcode (just a company name) is held as Waiting for destination address instead of printing
   reports_per_call: 20, // reports per print batch (manifest + this many reports). Change it here; the gateway's own ceiling is 24
   max_reports_per_day: 200,
@@ -107,7 +108,7 @@ add('Printer status check', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', 
 code('Printer ready?', CODE.printer_ready, [1540, 40], 'Online + spooler Running + printer Normal + right queue. Anything else => stop + alert email, nothing claimed.');
 search('Count sent today', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.submitted_at,operator:'GTE',value:$json.day_start_ms}]`, [1760, 40], false);
 code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day minus reports already printed today. 0 left => run ends quietly.');
-const CTL_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,printing_on_pip,printing_on_uc,printing_on_hsa,printing_on_dla,max_batches_per_run,reports_per_call,max_reports_per_day' }}`;
+const CTL_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,printing_on_pip,printing_on_uc,printing_on_hsa,printing_on_dla,max_batches_per_run,max_reports_per_run,reports_per_call,max_reports_per_day' }}`;
 const ctlGet = (name, pos, notes) => add(name, 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: CTL_URL, ...HS, options: { timeout: 20000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, pos, { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes, notesInFlow: true });
 ctlGet('Read control settings', [1650, 40], 'Reads the Print control company in HubSpot (control_company_id in Config).');
 code('Apply control settings', CODE.apply_control, [1870, 40], 'Print paused ticked, or HubSpot not answering => run ends quietly, nothing claimed. Otherwise any filled-in control value replaces the Config value for this run.');
