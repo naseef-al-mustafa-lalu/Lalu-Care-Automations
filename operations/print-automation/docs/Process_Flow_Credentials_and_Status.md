@@ -38,7 +38,7 @@ Stages: UC/HSA awaiting printing (64932356), PIP awaiting printing (64932357). P
 
 Before anything is claimed, n8n checks each report exists in EMR+ with a light HEAD request (nothing is downloaded or stored). Deals whose report is missing, not linked to the deal or not ready go to Needs attention with the reason and never reach a manifest; deals EMR+ could not answer for stay Queued for the next run; a 403 stops the run with an alert. Reports are **not downloaded in advance**: n8n creates signed links that expire after 30 minutes, one per report. The manifest is the first job, then each report in order, up to 24 reports per call to the gateway.
 
-**More than 20 reports:** a destination with more reports than fit in one call is sent in several calls. Each call gets its own manifest, labelled as a part of the batch (for example part 1 of 2), listing only the reports in that call.
+**More than `reports_per_call` reports (20; change it in Config, up to 24):** a destination with more reports than fit in one call is sent in several calls. Each call gets its own manifest, labelled as a part of the batch (for example part 1 of 2), listing only the reports in that call.
 
 ### 4. Send one destination batch at a time
 n8n sends one batch to the gateway. For each link, the gateway calls back to n8n; n8n then fetches that single report from EMR+ and streams it back. Nothing is saved on n8n or the gateway beyond the print spool. Deals are marked Sent to the printer only when the gateway accepts the batch.

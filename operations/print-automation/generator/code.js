@@ -7,7 +7,7 @@ const copy=JSON.parse(JSON.stringify(c));
 delete copy.emr_base; // EMR+ host is only needed by the report-link flow and may still be a placeholder
 const bad=JSON.stringify(copy).match(/REPLACE_[A-Z_]+/g);
 if(bad) throw new Error('SETUP_REQUIRED: set these values in the Config node: '+[...new Set(bad)].join(', '));
-if(Number(c.reports_per_call)<1||Number(c.reports_per_call)>20) throw new Error('SETUP_REQUIRED: reports_per_call must be 1 to 20 (batches are limited to 20 reports, the gateway allows 25 jobs per call and one is the manifest)');
+if(Number(c.reports_per_call)<1||Number(c.reports_per_call)>24) throw new Error('SETUP_REQUIRED: reports_per_call must be 1 to 24 (the gateway allows 25 jobs per call and one is the manifest)');
 return $input.all();`;
 
 const HELPERS = String.raw`const now=Date.now(); const nowISO=new Date(now).toISOString();
@@ -140,7 +140,7 @@ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe
 const batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;
 const when=parts.day+'/'+parts.month+'/'+parts.year+' '+parts.hour+':'+parts.minute;
 const allowance=$('Daily allowance').first().json.allowance;
-const per=Math.max(1,Math.min(20,Number(c.reports_per_call)||20));
+const per=Math.max(1,Math.min(24,Number(c.reports_per_call)||20));
 const qt=d=>{ const t=(d.properties||{})[F.queued_at]; const n=/^\d+$/.test(String(t))?Number(t):Date.parse(t); return isNaN(n)?Infinity:n; };
 deals.sort((a,b)=>qt(a)-qt(b));
 const updates=[...$('Apply report checks').all().flatMap(i=>i.json.flagged_updates||[])]; const valid=[];

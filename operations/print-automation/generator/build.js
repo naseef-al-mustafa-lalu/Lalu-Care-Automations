@@ -29,7 +29,7 @@ const cfg = {
   retry_until_time: '16:30', // ... every 30 minutes until this time; if the printer is still offline an alert is sent and the next weekday run tries again
   bank_holidays: ['2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'], // England and Wales; dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   link_valid_minutes: 30,
-  reports_per_call: 20,
+  reports_per_call: 20, // reports per print batch (manifest + this many reports). Change it here; the gateway's own ceiling is 24
   max_reports_per_day: 200,
   duplex: true,
   colour: false,
@@ -107,7 +107,7 @@ code('Select queued deals', CODE.select_queued, [1760, -120]);
 code('List deals to check', CODE.list_checks, [1980, -120], 'Lists the deals that will be checked against EMR+ (up to the daily allowance plus 20).');
 add('Check report in EMR+ (no download)', 'n8n-nodes-base.httpRequest', 4.2, { method: 'HEAD', url: "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $json.mediref + '/completed_report/?hubspot_deal_id=' + $json.deal_id }}", ...HDR, options: { timeout: 30000, batching: { batch: { batchSize: 4, batchInterval: 250 } }, response: { response: { fullResponse: true, neverError: true, responseFormat: 'text' } } } }, [2200, -120], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Same Header Auth credential as Fetch report from EMR+. HEAD request: nothing is downloaded or stored. 200 = report is there, 404 = medi ref not linked to the deal, 409 = not ready.', notesInFlow: true });
 code('Apply report checks', CODE.apply_checks, [2420, -120], 'Deals whose report is missing or not linked go to Needs attention with the reason and never reach the manifest. Deals EMR+ could not answer for stay Queued. 403 stops the run with an alert.');
-code('Build batches and claim updates', CODE.build_packs, [2640, -120], 'Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (max 20).');
+code('Build batches and claim updates', CODE.build_packs, [2640, -120], 'Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (set in Config, currently 20; gateway ceiling 24).');
 hsPost('Claim deals', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [2860, -120]);
 code('List batches', CODE.list_packs, [3080, -120]);
 add('Next batch', 'n8n-nodes-base.splitInBatches', 3, { batchSize: 1, options: {} }, [3300, -120], { notes: 'Output 1 (loop) = next batch. Output 0 (done) = finished.', notesInFlow: true });

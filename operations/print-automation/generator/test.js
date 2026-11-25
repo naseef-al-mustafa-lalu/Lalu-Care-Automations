@@ -158,7 +158,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const bp3 = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Apply report checks': sel25 } });
   ok(bp3[0].json.packs.map(p => p.cases.length).join() === '20,10', '30 reports -> 20 + 10 (batches limited to 20)');
   const bp4 = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Apply report checks': sel25 }, cfgOverride: { ...real, reports_per_call: 99 } });
-  ok(Math.max(...bp4[0].json.packs.map(p => p.cases.length)) === 20, 'hard cap 20 even if config is higher');
+  ok(Math.max(...bp4[0].json.packs.map(p => p.cases.length)) === 24, 'hard cap 24 (gateway limit) even if config is higher');
   const old = (id, q) => d(id, 'S_PIP', { print_queued_at: q });
   const bpc = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Apply report checks': [mkitem({ deals: [old(31, '2026-11-01T10:00:00Z'), old(32, '2026-10-30T10:00:00Z'), old(33, '2026-10-31T10:00:00Z'), old(34, '')] })], 'Daily allowance': [mkitem({ allowance: 2 })] } });
   ok(bpc.flatMap(x => x.json.inputs).map(u => u.id).sort().join() === '32,33', 'daily allowance: oldest queued first');
