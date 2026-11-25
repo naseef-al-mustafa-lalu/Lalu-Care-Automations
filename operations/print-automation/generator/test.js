@@ -96,8 +96,8 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(packs[1].part === 1 && packs[1].parts === 1 && packs[1].cases[0].job_id === packs[1].submission_ref + '-R01', 'part and job ids');
   const byId = Object.fromEntries(upd.map(u => [u.id, u.properties]));
   ok(byId['1'].print_status === 'preparing' && byId['1'].dispatch_hold_printing === 'true' && byId['1'].printer_job_reference === packs[1].cases[0].job_id, 'claim props use the report job id');
-  ok(byId['5'].print_status === 'needs_attention' && /Destination address is empty/.test(byId['5'].print_issue), 'empty destination rejected');
-  ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /Destination address is empty/.test(byId['8'].print_issue), 'invalid cases explained');
+  ok(!('print_status' in byId['5']) && !('dealstage' in byId['5']) && /^Waiting for destination address/.test(byId['5'].print_issue), 'empty destination stays Queued with a waiting note (no status or stage change)');
+  ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /^Waiting for destination address/.test(byId['8'].print_issue), 'invalid cases explained');
   // destination: the address is the canonical Third party company address, so the same text means the same recipient (exact match); line breaks are joined with commas
   const sd = (id, addr, extra) => ({ id, properties: { dealstage: 'S_PIP', mediref: '2000' + id, report_type: 'PIP', destination_address: addr, ...(extra || {}) } });
   const stdSel = [mkitem({ deals: [sd(71, 'DWP Leeds,\nPO Box 1, LS1 1AA'), sd(72, 'DWP Leeds, PO Box 1, LS1 1AA'), sd(73, 'The Old Road Office, M1 2BB'), sd(74, 'Old Rd Office  M1 2BB')] })];
@@ -106,7 +106,9 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const noSet = [mkitem({ deals: [sd(81, '', { recipient_company_set: 'No' }), sd(82, '', { recipient_company_set: 'Yes' }), sd(83, '')] })];
   const bn = await run('Build batches and claim updates', { nodes: { 'Select queued deals': noSet, 'Daily allowance': [mkitem({ allowance: 100 })] } });
   const bni = Object.fromEntries(bn.flatMap(x => x.json.inputs).map(u => [u.id, u.properties.print_issue]));
-  ok(/No third party company matched/.test(bni['81']) && /linked but it has no address/.test(bni['82']) && /Destination address is empty/.test(bni['83']), 'empty destination gives a reason from recipient_company_set');
+  ok(/Waiting for destination address.*no third party company matched/.test(bni['81']) && /Waiting for destination address.*has no address/.test(bni['82']) && /Waiting for destination address.*is empty/.test(bni['83']), 'empty destination gives a waiting note with the reason from recipient_company_set');
+  const wn = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: [sd(91, '', { print_issue: 'Waiting for destination address: x' })] })], 'Daily allowance': [mkitem({ allowance: 100 })] } });
+  ok(JSON.stringify(wn.flatMap(x => x.json.inputs || [])) === '[]', 'waiting note is written once, not on every run');
   // weekday schedule and bank holidays
   const todayUK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
   const dowUK = new Date(todayUK + 'T12:00:00Z').getUTCDay();

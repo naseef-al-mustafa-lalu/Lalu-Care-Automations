@@ -107,7 +107,12 @@ for(const d of deals){
   let bad='';
   if(!/^\d+$/.test(mediref)) bad='Case reference missing or not numeric';
   else if(!type) bad='Report type not recognised';
-  else if(!dest) bad=(p[F.recipient_set]==='No')?'No third party company matched the scanned address on the deal. Add that address to the right company as an alternative address, or create the company':(p[F.recipient_set]==='Yes')?'A third party company is linked but it has no address. Check the address on the company record':'Destination address is empty on the deal (check the Third party company)';
+  if(!bad&&!dest){
+    // No destination yet: leave the deal Queued (no stage move, no Needs attention). Write a waiting note once; it prints on its own when the address is populated.
+    const why=(p[F.recipient_set]==='No')?'no third party company matched the scanned address on the deal':(p[F.recipient_set]==='Yes')?'a third party company is linked but it has no address':'the destination address is empty on the deal (check the Third party company)';
+    if(!String(p[F.issue]||'').startsWith('Waiting for destination address')){ const pr={}; pr[F.issue]='Waiting for destination address: '+why+'. It will print on its own once the address is populated.'; updates.push({id,properties:pr}); }
+    continue;
+  }
   if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'.'; if(type&&c.awaiting_print_stages.includes(p.dealstage)) pr.dealstage=c.issue_stages[type]; updates.push({id,properties:pr}); }
   else if(valid.length<allowance) valid.push({deal_id:id,mediref,report_type:type,destination:dest});
 }
