@@ -68,13 +68,13 @@ const offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Mat
 const day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;
 return [{json:{printer_state:notes.length?'dry_run_not_checked: '+notes.join('; '):state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];`;
 
-CODE.daily_allowance = String.raw`const c=$('Config').first().json.cfg;
+CODE.daily_allowance = String.raw`const c=$('Apply control settings').first().json.cfg;
 const sent=Number(($input.first().json||{}).total||0);
 const allowance=Math.max(0,c.max_reports_per_day-sent);
 if(allowance===0) return [];
 return [{json:{allowance,sent_today:sent}}];`;
 
-CODE.select_queued = String.raw`const c=$('Config').first().json.cfg;
+CODE.select_queued = String.raw`const c=$('Apply control settings').first().json.cfg;
 const seen=new Map();
 for(const it of $input.all()) for(const d of (it.json.results||[])) seen.set(String(d.id),d);
 const skip=new Set(c.cancelled_rejected_stages);
@@ -128,7 +128,7 @@ const {updates,abort,checked,removed,...pack}=j;
 return [{json:pack}];`;
 
 // Groups valid cases by destination, splits each destination into calls of reports_per_call, claims the cases.
-CODE.build_packs = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
+CODE.build_packs = String.raw`const c=$('Apply control settings').first().json.cfg; const F=c.fields, V=c.values;
 const deals=$('Select queued deals').all().flatMap(i=>i.json.deals||[]);
 const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
 const batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;
@@ -448,3 +448,26 @@ for(const k of meta.cases){
 return [{json:{dry_run:true,pack_ref:meta.pack_ref,inputs,summary:lines}}];`;
 
 module.exports = CODE;
+
+// Ops control: the "Print control" company in the ops portal. Blank property = use the Config value. Read once at run start.
+// A ticked Print paused, or HubSpot not answering, ends the run quietly before anything is claimed (deals stay Queued) — except in dry run.
+CODE.apply_control = String.raw`const c=JSON.parse(JSON.stringify($('Config').first().json.cfg));
+const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const p=(r.body||{}).properties;
+const prev=$('Printer ready?').first().json;
+if(sc!==200||!p){ if(c.dry_run===true) return [{json:{...prev,cfg:c,control_applied:['control unreadable (dry run)']}}]; return []; }
+if(String(p.print_paused)==='true') return [];
+const applied=[]; const has=v=>v!==null&&v!==undefined&&String(v).trim()!=='';
+const tf={PIP:'printing_on_pip',UC:'printing_on_uc',HAA:'printing_on_hsa',DLA:'printing_on_dla'};
+c.print_enabled={...(c.print_enabled||{})};
+for(const [t,k] of Object.entries(tf)){ const v=String(p[k]); if(v==='true'||v==='false'){ c.print_enabled[t]=v==='true'; applied.push(k); } }
+const num=(k,min,max,to)=>{ if(!has(p[k])) return; const n=Number(p[k]); if(Number.isInteger(n)&&n>=min&&n<=max){ c[to]=n; applied.push(k); } };
+num('max_batches_per_run',0,1000,'max_batches_per_run'); num('reports_per_call',1,24,'reports_per_call'); num('max_reports_per_day',0,100000,'max_reports_per_day');
+return [{json:{...prev,cfg:c,control_applied:applied}}];`;
+
+// Before every batch: still not paused? Passes the batch straight through. Paused or unreadable ends the run; the batch's deals are still Queued.
+CODE.pause_check = String.raw`const pack=$('Next batch').first().json;
+const c=$('Config').first().json.cfg;
+const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const p=(r.body||{}).properties;
+if(c.dry_run===true) return [{json:pack}];
+if(sc!==200||!p||String(p.print_paused)==='true') return [];
+return [{json:pack}];`;

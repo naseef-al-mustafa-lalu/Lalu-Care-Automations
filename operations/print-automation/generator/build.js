@@ -54,6 +54,7 @@ const cfg = {
   },
   report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA', 'DWP - Disability Living Allowance': 'DLA' },
   print_enabled: { PIP: false, UC: true, HAA: true, DLA: false }, // one switch per report type. false = deals of that type are left Queued and untouched until you switch it back on. PIP is off for now. DLA is allowed but switched off until you are ready
+  control_company_id: '474434180302', // the "Print control" company in the ops HubSpot portal. Its checkboxes/numbers override Config at run start (Printing on PIP/UC/HSA/DLA, Max batches per run, Reports per call, Max reports per day); Print paused is also checked before every batch. Blank = use the value in this Config
   preparing_timeout_minutes: 60,
   gateway_timeout_minutes: 30, // how long n8n waits for the gateway to answer one print call (one batch of up to 20 reports) before treating the result as unknown. A 20-report HSA batch took 15 min on 25 Nov, so 15 was too short
 };
@@ -106,6 +107,12 @@ add('Printer status check', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', 
 code('Printer ready?', CODE.printer_ready, [1540, 40], 'Online + spooler Running + printer Normal + right queue. Anything else => stop + alert email, nothing claimed.');
 search('Count sent today', `[{propertyName:'pipeline',operator:'EQ',value:${C}.pipeline_id},{propertyName:${C}.fields.submitted_at,operator:'GTE',value:$json.day_start_ms}]`, [1760, 40], false);
 code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day minus reports already printed today. 0 left => run ends quietly.');
+const CTL_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,printing_on_pip,printing_on_uc,printing_on_hsa,printing_on_dla,max_batches_per_run,reports_per_call,max_reports_per_day' }}`;
+const ctlGet = (name, pos, notes) => add(name, 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: CTL_URL, ...HS, options: { timeout: 20000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, pos, { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes, notesInFlow: true });
+ctlGet('Read control settings', [1650, 40], 'Reads the Print control company in HubSpot (control_company_id in Config).');
+code('Apply control settings', CODE.apply_control, [1870, 40], 'Print paused ticked, or HubSpot not answering => run ends quietly, nothing claimed. Otherwise any filled-in control value replaces the Config value for this run.');
+ctlGet('Read pause switch', [3410, -240], 'Before every batch: is Print paused ticked on the Print control company?');
+code('Pause check', CODE.pause_check, [3520, -330], 'Paused (or HubSpot not answering) => run ends; this batch stays Queued. Otherwise passes the batch on.');
 code('Select queued deals', CODE.select_queued, [1760, -120]);
 add('Check report in EMR+ (no download)', 'n8n-nodes-base.httpRequest', 4.2, { method: 'HEAD', url: "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $json.mediref + '/completed_report/?hubspot_deal_id=' + $json.deal_id }}", ...HDR, options: { timeout: 30000, batching: { batch: { batchSize: 4, batchInterval: 250 } }, response: { response: { fullResponse: true, neverError: true, responseFormat: 'text' } } } }, [2200, -120], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Same Header Auth credential as Fetch report from EMR+. HEAD request: nothing is downloaded or stored. 200 = report is there, 404 = medi ref not linked to the deal, 409 = not ready.', notesInFlow: true });
 code('Build batches and claim updates', CODE.build_packs, [2640, -120], 'Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (set in Config, currently 20; gateway ceiling 24).');
@@ -130,9 +137,9 @@ hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
 code('Working day?', CODE.working_day, [880, -120], 'Scheduled runs only: ends quietly on a weekend or a date listed in Config bank_holidays (YYYY-MM-DD). Manual runs always continue.');
 link('Route', 'Working day?', 0); link('Working day?', 'Guard: any Preparing deals?');
-chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Any start updates?', 'Claim deals', 'List batches', 'Next batch');
+chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Read control settings', 'Apply control settings', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Any start updates?', 'Claim deals', 'List batches', 'Next batch');
 chain('List pack deals to check', 'Check report in EMR+ (no download)', 'Apply batch check', 'Has check updates?');
-link('Next batch', 'List pack deals to check', 1);
+chain('Read pause switch', 'Pause check', 'List pack deals to check'); link('Next batch', 'Read pause switch', 1);
 link('Any start updates?', 'List batches', 1);
 link('Has check updates?', 'Write check updates', 0); link('Has check updates?', 'Pack after checks', 1); link('Write check updates', 'Pack after checks');
 link('Pack after checks', 'Anything to print?'); link('Anything to print?', 'Build job links', 0); link('Anything to print?', 'Next batch', 1);

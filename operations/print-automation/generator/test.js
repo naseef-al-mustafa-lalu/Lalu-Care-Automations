@@ -38,7 +38,7 @@ const mkitem = (json, binary) => ({ json, binary });
 const b64 = s => Buffer.from(s).toString('base64');
 async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, http, sd = {} } = {}) {
   const c = cfgOverride || real;
-  const env = { ...nodes, Config: [mkitem({ cfg: c, flow: 'x', body: nodes.__body, query: nodes.__query })] };
+  const env = { 'Apply control settings': [mkitem({ cfg: c })], ...nodes, Config: [mkitem({ cfg: c, flow: 'x', body: nodes.__body, query: nodes.__query })] };
   const $ = n => { const a = env[n]; if (!a) throw new Error('Node not executed: ' + n); return { first: () => a[0], all: () => a, itemMatching: i => a[i], item: a[0] }; };
   const $input = { all: () => input, first: () => input[0] };
   const ctx = { helpers: {
@@ -67,6 +67,34 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok((await run('Check config', { input: [mkitem({})], cfgOverride: onlyEmr })).length === 1, 'EMR+ placeholder alone does not block the print run');
   await throws(run('Check config', { input: [mkitem({})], cfgOverride: { ...real, reports_per_call: 25 } }), /reports_per_call/);
 
+
+  // ---- ops control company (Print control)
+  {
+    const ctl = (props, sc = 200) => [mkitem({ statusCode: sc, body: sc === 200 ? { id: '1', properties: props } : {} })];
+    const pr = { Config: [mkitem({ cfg: real })], 'Printer ready?': [mkitem({ printer_state: 'ready', day_start_ms: '123' })] };
+    const ap = (props, sc, c) => run('Apply control settings', { input: ctl(props, sc), nodes: { 'Printer ready?': pr['Printer ready?'] }, cfgOverride: c });
+    const a0 = await ap({});
+    ok(a0.length === 1 && a0[0].json.day_start_ms === '123' && a0[0].json.cfg.max_reports_per_day === real.max_reports_per_day && a0[0].json.control_applied.length === 0, 'blank control = Config values, run continues');
+    ok((await ap({ print_paused: 'true' })).length === 0, 'Print paused ends the run quietly');
+    ok((await ap({}, 502)).length === 0, 'HubSpot not answering ends the run (fails closed)');
+    ok((await ap({}, 502, { ...real, dry_run: true })).length === 1, 'dry run is not blocked by an unreadable control record');
+    const a1 = await ap({ printing_on_pip: 'true', printing_on_uc: 'false', printing_on_hsa: '', max_batches_per_run: '4', reports_per_call: '12', max_reports_per_day: '150' });
+    const k = a1[0].json.cfg;
+    ok(k.print_enabled.PIP === true && k.print_enabled.UC === false && k.print_enabled.HAA === real.print_enabled.HAA && k.print_enabled.DLA === real.print_enabled.DLA && k.max_batches_per_run === 4 && k.reports_per_call === 12 && k.max_reports_per_day === 150, 'control values override Config');
+    const a2 = await ap({ reports_per_call: '30', max_batches_per_run: '-1', max_reports_per_day: 'abc' });
+    ok(a2[0].json.cfg.reports_per_call === real.reports_per_call && a2[0].json.cfg.max_batches_per_run === real.max_batches_per_run && a2[0].json.cfg.max_reports_per_day === real.max_reports_per_day, 'out-of-range or invalid control values are ignored (reports_per_call capped at 24)');
+    const pk = mkitem({ cases: [{ deal_id: 'd1', mediref: 'm1' }] });
+    const pc = (props, sc, c) => run('Pause check', { input: ctl(props, sc), nodes: { 'Next batch': [pk] }, cfgOverride: c });
+    ok((await pc({ print_paused: 'false' })).length === 1 && (await pc({}))[0].json.cases.length === 1, 'not paused: batch passes through');
+    ok((await pc({ print_paused: 'true' })).length === 0, 'paused before a batch ends the run');
+    ok((await pc({}, 500)).length === 0, 'pause check fails closed');
+    ok((await pc({ print_paused: 'true' }, 200, { ...real, dry_run: true })).length === 1, 'dry run ignores pause');
+    // wiring
+    const nxt = n => (wf.connections[n] || { main: [] }).main.map(o => o.map(t => t.node));
+    ok(nxt('Printer ready?')[0][0] === 'Read control settings' && nxt('Read control settings')[0][0] === 'Apply control settings' && nxt('Apply control settings')[0][0] === 'Count sent today', 'control settings read after the printer check, before the allowance');
+    ok(nxt('Next batch')[1][0] === 'Read pause switch' && nxt('Pause check')[0][0] === 'List pack deals to check', 'pause switch read before each batch check/claim');
+    ok(JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg.control_company_id === '474434180302', 'control company id in Config');
+  }
   // ---- guard + pre-flight + allowance
   await throws(run('Stop if run unfinished', { input: [mkitem({ total: 2 })] }), /PRINT_RUN_BLOCKED/);
   ok((await run('Stop if run unfinished', { input: [mkitem({ total: 0 })] })).length === 1, 'guard ok');
