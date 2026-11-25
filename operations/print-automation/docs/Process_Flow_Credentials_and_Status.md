@@ -36,9 +36,9 @@ Stages: UC/HSA awaiting printing (64932356), PIP awaiting printing (64932357). P
 
 **Manifest layout:** the batch ID, destination, number of reports, and date and time appear once, at the top of the manifest. The case reference and report type appear once per report, as one line per report, in the same order the reports print behind it. Staff use this to check the printed stack against the sheet.
 
-Reports are **not downloaded in advance**: n8n creates signed links that expire after 30 minutes, one per report. The manifest is the first job, then each report in order, up to 24 reports per call to the gateway.
+Before anything is claimed, n8n checks each report exists in EMR+ with a light HEAD request (nothing is downloaded or stored). Deals whose report is missing, not linked to the deal or not ready go to Needs attention with the reason and never reach a manifest; deals EMR+ could not answer for stay Queued for the next run; a 403 stops the run with an alert. Reports are **not downloaded in advance**: n8n creates signed links that expire after 30 minutes, one per report. The manifest is the first job, then each report in order, up to 24 reports per call to the gateway.
 
-**More than 24 reports:** a destination with more reports than fit in one call is sent in several calls. Each call gets its own manifest, labelled as a part of the batch (for example part 1 of 2), listing only the reports in that call.
+**More than 20 reports:** a destination with more reports than fit in one call is sent in several calls. Each call gets its own manifest, labelled as a part of the batch (for example part 1 of 2), listing only the reports in that call.
 
 ### 4. Send one destination batch at a time
 n8n sends one batch to the gateway. For each link, the gateway calls back to n8n; n8n then fetches that single report from EMR+ and streams it back. Nothing is saved on n8n or the gateway beyond the print spool. Deals are marked Sent to the printer only when the gateway accepts the batch.
@@ -141,7 +141,7 @@ After successful printing with no open issue:
 | Gateway connection, auth, printer health check | Built and tested |
 | Sequential printing in order, per-job results | Tested (3 pages; about 6 s per job after IT fix) |
 | n8n-hosted links fetched by the gateway | Tested with dummy PDFs |
-| Main print workflow rebuilt for this design (links, manifest, 24-per-call, timeout handling) | Built and checked locally (259 checks, manifest PDFs validated). Imported into n8n 4 November; to test with dummy reports. |
+| Main print workflow rebuilt for this design (links, manifest, 20-per-call, report check, timeout handling) | Built and checked locally (259 checks, manifest PDFs validated). Imported into n8n 4 November; to test with dummy reports. |
 | EMR+ host and API key | Pending (4 November) |
 | Destination property | `destination_address` on the deal (synced from the Third party company). A deal with it empty goes to Needs attention, with a reason from recipient_company_set. |
 | Manifest fields | Proposed above, to confirm |

@@ -59,7 +59,7 @@ EMR+ errors are turned into HTTP codes the gateway reports back: 404 no matching
 6. Activate only after the pilot checklist.
 
 ## Limits (Config node)
-- `reports_per_call` (default and maximum 24): reports per gateway call. The gateway allows 25 jobs per call and one is the manifest.
+- `reports_per_call` (default and maximum 20): reports per gateway call. The gateway allows 25 jobs per call and one is the manifest.
 - `max_reports_per_day` (default 200): reports per day, counted from deals with a Print submitted at date today (UK time), oldest queued first. The rest wait for tomorrow.
 - `link_valid_minutes` (default 30): how long a report link works. A call of 25 jobs takes about 3 minutes at about 6 s per job.
 - `preparing_timeout_minutes` (default 60).

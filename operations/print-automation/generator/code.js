@@ -7,7 +7,7 @@ const copy=JSON.parse(JSON.stringify(c));
 delete copy.emr_base; // EMR+ host is only needed by the report-link flow and may still be a placeholder
 const bad=JSON.stringify(copy).match(/REPLACE_[A-Z_]+/g);
 if(bad) throw new Error('SETUP_REQUIRED: set these values in the Config node: '+[...new Set(bad)].join(', '));
-if(Number(c.reports_per_call)<1||Number(c.reports_per_call)>24) throw new Error('SETUP_REQUIRED: reports_per_call must be 1 to 24 (the gateway allows 25 jobs per call and one is the manifest)');
+if(Number(c.reports_per_call)<1||Number(c.reports_per_call)>20) throw new Error('SETUP_REQUIRED: reports_per_call must be 1 to 20 (batches are limited to 20 reports, the gateway allows 25 jobs per call and one is the manifest)');
 return $input.all();`;
 
 const HELPERS = String.raw`const now=Date.now(); const nowISO=new Date(now).toISOString();
@@ -87,17 +87,63 @@ for(let i=0;i<deals.length;i+=100){
 }
 return out;`;
 
+// Checks each report exists in EMR+ before anything is claimed or put on a manifest (HEAD request: nothing is downloaded or stored).
+CODE.list_checks = String.raw`const c=$('Config').first().json.cfg; const F=c.fields;
+const allowance=Number($('Daily allowance').first().json.allowance||0);
+const budget=allowance+20; let used=0;
+const out=[];
+for(const it of $input.all()) for(const d of (it.json.deals||[])){
+  const p=d.properties||{};
+  const mediref=String(p[F.case_ref]||'').trim();
+  const type=c.report_types[String(p[F.report_type]||'').trim()];
+  const dest=String(p[F.dest_source]||'').trim();
+  const eligible=/^\d+$/.test(mediref)&&!!type&&!!dest&&c.emr_mode!=='dummy'&&used<budget;
+  if(eligible) used++;
+  if(eligible) out.push({json:{deal_id:String(d.id),mediref,checked:true}});
+}
+if(!out.length) out.push({json:{deal_id:'0',mediref:'0',checked:false}});
+return out;`;
+
+CODE.apply_checks = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
+const listed=$('List deals to check').all().map(i=>i.json);
+const res=$input.all().map(i=>i.json||{});
+const deals=$('Select queued deals').all().flatMap(i=>i.json.deals);
+const byId=new Map(deals.map(d=>[String(d.id),d]));
+const maxMb=Number(c.max_report_mb||150); const maxB=maxMb*1000000;
+const why={400:'the case reference (medi ref) is not valid: correct the medi ref on the deal',404:'EMR+ could not match the medi ref to this deal (wrong medi ref, copied from another case, or not linked to this deal\'s submission reference): check the medi ref and submission reference on the deal against the EMR+ instruction',409:'the report is not completed, not available or too large in EMR+: ops to check'};
+const drop=new Set(); const flagged=[]; let checked=0, transient=0;
+listed.forEach((l,i)=>{
+  if(!l.checked) return; checked++;
+  const d=byId.get(l.deal_id); if(!d) return;
+  const r=res[i]||{}; const sc=Number(r.statusCode||0); let bad='';
+  if(sc===200){ const hl=Number(((r.headers||{})['content-length'])||0); if(hl>maxB) bad='the report is '+(hl/1000000).toFixed(1)+' MB, over the limit of '+maxMb+' MB'; }
+  else if(sc===401||sc===403) throw new Error('EMR_ACCESS_REFUSED: EMR+ refused access (HTTP '+sc+') while checking reports. Check the API key and that the n8n IP address is allowed. Nothing was claimed or printed.');
+  else if(why[sc]) bad=why[sc]+' (HTTP '+sc+')';
+  else { transient++; drop.add(l.deal_id); return; }
+  if(bad){
+    drop.add(l.deal_id);
+    const p=d.properties||{}; const type=c.report_types[String(p[F.report_type]||'').trim()];
+    const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'. Fix the cause, then use Print / reprint.';
+    if(type&&c.awaiting_print_stages.includes(p.dealstage)) pr.dealstage=c.issue_stages[type];
+    flagged.push({id:l.deal_id,properties:pr});
+  }
+});
+if(checked&&transient===checked) throw new Error('EMR_UNAVAILABLE: EMR+ did not answer the report checks (rate limited, down or unreachable). Nothing was claimed or printed; deals stay Queued and the next run tries again.');
+const keep=deals.filter(d=>!drop.has(String(d.id)));
+if(!keep.length&&!flagged.length) return [];
+return [{json:{deals:keep,flagged_updates:flagged,checked,not_checked_now:transient}}];`;
+
 // Groups valid cases by destination, splits each destination into calls of reports_per_call, claims the cases.
 CODE.build_packs = String.raw`const c=$('Config').first().json.cfg; const F=c.fields, V=c.values;
-const deals=$('Select queued deals').all().flatMap(i=>i.json.deals);
+const deals=$('Apply report checks').all().flatMap(i=>i.json.deals||[]);
 const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
 const batch_id='PRINT-'+parts.year+parts.month+parts.day+'-'+parts.hour+parts.minute;
 const when=parts.day+'/'+parts.month+'/'+parts.year+' '+parts.hour+':'+parts.minute;
 const allowance=$('Daily allowance').first().json.allowance;
-const per=Math.max(1,Math.min(24,Number(c.reports_per_call)||24));
+const per=Math.max(1,Math.min(20,Number(c.reports_per_call)||20));
 const qt=d=>{ const t=(d.properties||{})[F.queued_at]; const n=/^\d+$/.test(String(t))?Number(t):Date.parse(t); return isNaN(n)?Infinity:n; };
 deals.sort((a,b)=>qt(a)-qt(b));
-const updates=[]; const valid=[];
+const updates=[...$('Apply report checks').all().flatMap(i=>i.json.flagged_updates||[])]; const valid=[];
 for(const d of deals){
   const p=d.properties||{}; const id=String(d.id);
   const mediref=String(p[F.case_ref]||'').trim();
