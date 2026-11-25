@@ -102,7 +102,7 @@ const res=$input.all().map(i=>i.json||{});
 const maxMb=Number(c.max_report_mb||150); const maxB=maxMb*1000000;
 const why={400:'the case reference (medi ref) is not valid: correct the medi ref on the deal',404:'EMR+ could not match the medi ref to this deal (wrong medi ref, copied from another case, or not linked to this deal\'s submission reference): check the medi ref and submission reference on the deal against the EMR+ instruction',409:'the report is not completed, not available or too large in EMR+: ops to check'};
 const keep=[]; const updates=[]; let abort='';
-const back=k=>{ const pr={}; pr[F.status]=V.queued; pr[F.hold]='true'; pr[F.batch]=''; pr[F.job_ref]=''; updates.push({id:k.deal_id,properties:pr}); };
+const back=k=>{}; // not claimed yet: a report EMR+ could not answer for simply stays Queued for the next run
 pack.cases.forEach((k,i)=>{
   const r=res[i]||{}; const sc=Number(r.statusCode||0); let bad='';
   if(abort){ back(k); return; }
@@ -113,14 +113,16 @@ pack.cases.forEach((k,i)=>{
   if(bad){ const pr={}; pr[F.status]=V.issue; pr[F.hold]='true'; pr[F.issue]='Not queued for printing: '+bad+'. Fix the cause, then use Print / reprint.'; const type=k.report_type; if(c.issue_stages[type]) pr.dealstage=c.issue_stages[type]; updates.push({id:k.deal_id,properties:pr}); return; }
   keep.push(k);
 });
-if(abort){ updates.length=0; for(const k of pack.cases) back(k); return [{json:{...pack,cases:[],updates,abort,checked:pack.cases.length,removed:pack.cases.length}}]; }
+if(abort){ return [{json:{...pack,cases:[],updates:[],abort,checked:pack.cases.length,removed:pack.cases.length}}]; }
 const cases=keep.map((k,idx)=>({...k,job_id:pack.submission_ref+'-R'+String(idx+1).padStart(2,'0')}));
-// deals kept on the manifest get the new job reference so HubSpot matches the printed sheet
-for(const k of cases){ const old=pack.cases.find(o=>o.deal_id===k.deal_id); if(old&&old.job_id!==k.job_id){ const pr={}; pr[F.job_ref]=k.job_id; updates.push({id:k.deal_id,properties:pr}); } }
+// claim the deals that stay on this batch (Preparing) now, one batch at a time
+for(const k of cases){ const pr={}; pr[F.status]=V.preparing; pr[F.hold]='true'; pr[F.batch]=pack.batch_id; pr[F.job_ref]=k.job_id; pr[F.destination]=pack.destination; pr[F.issue]=''; pr[F.submitted_at]=''; pr[F.completed_at]=''; updates.push({id:k.deal_id,properties:pr}); }
 return [{json:{...pack,cases,updates,abort,checked:pack.cases.length,removed:pack.cases.length-cases.length}}];`;
 
 // After the check write: stop on an access error, otherwise pass the checked pack on.
-CODE.pack_after_checks = String.raw`const j=$('Apply batch check').first().json;
+CODE.pack_after_checks = String.raw`const w=$input.first().json||{};
+if(w.status==='error'||(w.errors&&w.errors.length)) throw new Error('CLAIM_FAILED: HubSpot did not accept the claims for this batch. Run stopped before printing; deals stuck in Preparing are flagged by the stuck check.');
+const j=$('Apply batch check').first().json;
 if(j.abort) throw new Error(j.abort);
 const {updates,abort,checked,removed,...pack}=j;
 return [{json:pack}];`;
@@ -145,9 +147,10 @@ for(const d of deals){
   let bad='';
   if(!/^\d+$/.test(mediref)) bad='Case reference missing or not numeric';
   else if(!type) bad='Report type not recognised';
-  if(!bad&&!dest){
-    // No destination yet: leave the deal Queued (no stage move, no Needs attention). Write a waiting note once; it prints on its own when the address is populated.
-    const why=(p[F.recipient_set]==='No')?'no third party company matched the scanned address on the deal':(p[F.recipient_set]==='Yes')?'a third party company is linked but it has no address':'the destination address is empty on the deal (check the Third party company)';
+  const noPc=!!dest&&!!c.require_postcode_in_destination&&!/[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}/i.test(dest);
+  if(!bad&&(!dest||noPc)){
+    // No usable destination yet: leave the deal Queued (no stage move, no Needs attention). Write a waiting note once; it prints on its own when the address is populated.
+    const why=noPc?'the destination has no postcode yet (just a company name): add the full address to the Third party company':(p[F.recipient_set]==='No')?'no third party company matched the scanned address on the deal':(p[F.recipient_set]==='Yes')?'a third party company is linked but it has no address':'the destination address is empty on the deal (check the Third party company)';
     if(!String(p[F.issue]||'').startsWith('Waiting for destination address')){ const pr={}; pr[F.issue]='Waiting for destination address: '+why+'. It will print on its own once the address is populated.'; updates.push({id,properties:pr}); }
     continue;
   }
@@ -164,11 +167,13 @@ for(const [destination,items] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]
     n++; const submission_ref=batch_id+'-P'+String(n).padStart(2,'0');
     const cases=items.slice(i,i+per).map((k,idx)=>({...k,job_id:submission_ref+'-R'+String(idx+1).padStart(2,'0')}));
     packs.push({batch_id,destination,submission_ref,part:Math.floor(i/per)+1,parts:total,when,cases});
-    for(const k of cases){ const pr={}; pr[F.status]=V.preparing; pr[F.hold]='true'; pr[F.batch]=batch_id; pr[F.job_ref]=k.job_id; pr[F.destination]=destination; pr[F.issue]=''; pr[F.submitted_at]=''; pr[F.completed_at]=''; updates.push({id:k.deal_id,properties:pr}); }
   }
 }
+// Deals are claimed (Preparing) one batch at a time, just before that batch prints (Apply batch check), so a long run never leaves later batches looking stuck.
+const maxB=Number(c.max_batches_per_run||0); const run=maxB>0?packs.slice(0,maxB):packs;
 const out=[];
-for(let i=0;i<updates.length;i+=100) out.push({json:{inputs:updates.slice(i,i+100),packs}});
+for(let i=0;i<updates.length;i+=100) out.push({json:{inputs:updates.slice(i,i+100),packs:run}});
+if(!out.length) out.push({json:{inputs:[],packs:run}});
 return out;`;
 
 CODE.list_packs = String.raw`for(const i of $input.all()){
@@ -182,7 +187,7 @@ return packs.map(p=>({json:p}));`;
 CODE.build_job_links = String.raw`const c=$('Config').first().json.cfg;
 const pack=$input.first().json;
 const exp=Math.floor(Date.now()/1000)+Number(c.link_valid_minutes)*60;
-const tcode={PIP:'P',UC:'U',HAA:'H'};
+const tcode={PIP:'P',UC:'U',HAA:'H',DLA:'D'};
 const canon=q=>Object.keys(q).map(k=>k+'='+encodeURIComponent(String(q[k]))).join('&');
 const base={pack_ref:pack.submission_ref,batch_id:pack.batch_id,destination:pack.destination,started_ms:Date.now()};
 const items=[];
@@ -370,7 +375,7 @@ const buildPdf=(pages)=>{
 
 CODE.build_manifest = String.raw`const q=$('Config').first().json.query||{};
 ${PDF_LIB}
-const names={P:'PIP',U:'UC',H:'HAA'};
+const names={P:'PIP',U:'UC',H:'HAA',D:'DLA'};
 const rows=String(q.c||'').split('.').filter(Boolean).map(s=>{ const m=s.split('-'); return {ref:m[0],type:names[m[1]]||m[1]}; });
 const dest=String(q.d||'').slice(0,70);
 const pages=[]; let cur=''; let y=0; let first=true;

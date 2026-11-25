@@ -31,7 +31,7 @@ for (const n of ['Send PDF', 'Send error']) ok(!wf.connections[n], n + ' is term
 
 // ---------- harness ----------
 const real = JSON.parse(JSON.stringify(cfg).replace(/REPLACE_[A-Z_]+/g, m => 'X_' + m.slice(8)));
-real.print_enabled = { PIP: true, UC: true, HAA: true, DLA: true }; // the shipped Config switches PIP off; tests run with everything on unless a test overrides it
+real.print_enabled = { PIP: true, UC: true, HAA: true, DLA: true }; real.require_postcode_in_destination = false; real.max_batches_per_run = 0; // shipped Config: PIP off, postcode required, 2 batches per run; most tests run with those relaxed unless a test overrides them
 real.link_secret = 'test-secret-for-hmac-1234567890abcdef'; real.dry_run = false; // the strict (real print) behaviour is what most tests cover
 real.awaiting_print_stages = ['S_PIP', 'S_UCHAA']; real.pip_invoicing_stage = 'S_INV'; real.completed_stage = 'S_SEND'; real.cancelled_rejected_stages = ['S_CANC', 'S_REJ']; real.company_destination_field = 'dest'; real.issue_stages = { PIP: 'S_ISS_PIP', UC: 'S_ISS_UC', HAA: 'S_ISS_UC' }; real.awaiting_stage_by_type = { PIP: 'S_PIP', UC: 'S_UCHAA', HAA: 'S_UCHAA' };
 const mkitem = (json, binary) => ({ json, binary });
@@ -100,7 +100,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(/^PRINT-\d{8}-\d{4}-P0[12]$/.test(packs[0].submission_ref) && /^\d\d\/\d\d\/\d{4} \d\d:\d\d$/.test(packs[0].when), 'batch ref and UK date text');
   ok(packs[1].part === 1 && packs[1].parts === 1 && packs[1].cases[0].job_id === packs[1].submission_ref + '-R01', 'part and job ids');
   const byId = Object.fromEntries(upd.map(u => [u.id, u.properties]));
-  ok(byId['1'].print_status === 'preparing' && byId['1'].dispatch_hold_printing === 'true' && byId['1'].printer_job_reference === packs[1].cases[0].job_id, 'claim props use the report job id');
+  ok(!byId['1'] && packs[1].cases[0].job_id === packs[1].submission_ref + '-R01', 'deals are not claimed at the start of the run: each batch is claimed just before it prints');
   ok(!('print_status' in byId['5']) && !('dealstage' in byId['5']) && /^Waiting for destination address/.test(byId['5'].print_issue), 'empty destination stays Queued with a waiting note (no status or stage change)');
   ok(/not recognised/.test(byId['6'].print_issue) && /not numeric/.test(byId['7'].print_issue) && /^Waiting for destination address/.test(byId['8'].print_issue), 'invalid cases explained');
   // destination: the address is the canonical Third party company address, so the same text means the same recipient (exact match); line breaks are joined with commas
@@ -114,6 +114,13 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(/Waiting for destination address.*no third party company matched/.test(bni['81']) && /Waiting for destination address.*has no address/.test(bni['82']) && /Waiting for destination address.*is empty/.test(bni['83']), 'empty destination gives a waiting note with the reason from recipient_company_set');
   const wn = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: [sd(91, '', { print_issue: 'Waiting for destination address: x' })] })], 'Daily allowance': [mkitem({ allowance: 100 })] } });
   ok(JSON.stringify(wn.flatMap(x => x.json.inputs || [])) === '[]', 'waiting note is written once, not on every run');
+  const pc = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: [sd(95, 'Health Assessment Advisory Service Wolverhampton Bootle'), sd(96, 'Freepost RUGX-RHKS-CHEU, London BSC UC, Wolverhampton, WV98 2HN')] })], 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...real, require_postcode_in_destination: true } });
+  const pcu = Object.fromEntries(pc.flatMap(x => x.json.inputs).map(u => [u.id, u.properties]));
+  ok(pc[0].json.packs.length === 1 && pc[0].json.packs[0].cases.length === 1 && pc[0].json.packs[0].cases[0].deal_id === '96' && /^Waiting for destination address: the destination has no postcode/.test(pcu['95'].print_issue) && !('print_status' in pcu['95']), 'a destination with only a company name (no postcode) is held with a waiting note and stays Queued');
+  const mb = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: Array.from({ length: 45 }, (_, i) => sd(200 + i, 'Leeds BSC')) })], 'Daily allowance': [mkitem({ allowance: 100 })] }, cfgOverride: { ...real, max_batches_per_run: 2 } });
+  ok(mb[0].json.packs.length === 2 && mb[0].json.packs[0].cases.length === 20 && mb[0].json.inputs.length === 0, 'max_batches_per_run limits one run to that many batches (45 deals = 3 batches, 2 are printed, the rest stay Queued)');
+  const dl = await run('Build batches and claim updates', { nodes: { 'Select queued deals': [mkitem({ deals: [sd(300, 'Leeds BSC', { report_type: 'DWP - Disability Living Allowance' })] })], 'Daily allowance': [mkitem({ allowance: 100 })] } });
+  ok(dl[0].json.packs[0].cases[0].report_type === 'DLA', 'DLA is a recognised report type');
   // report check per batch, just before it prints: HEAD results decide what stays on this batch and its manifest
   const mkpack = (n) => ({ batch_id: 'PRINT-20261125-1000', destination: 'Leeds BSC', submission_ref: 'PRINT-20261125-1000-P01', part: 1, parts: 1, when: '25/11/2026 10:00', cases: Array.from({ length: n }, (_, i) => ({ deal_id: String(i + 1), mediref: '3000' + (i + 1), report_type: 'PIP', destination: 'Leeds BSC', job_id: 'PRINT-20261125-1000-P01-R' + String(i + 1).padStart(2, '0') })) });
   const pk4 = [mkitem(mkpack(4))];
@@ -126,21 +133,24 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   const ui = Object.fromEntries(apj.updates.map(u => [u.id, u.properties]));
   ok(ui['2'].print_status === 'needs_attention' && ui['3'].print_status === 'needs_attention' && ui['2'].dealstage === 'S_ISS_PIP' && /^Not queued for printing: /.test(ui['2'].print_issue), 'failed deals go to Needs attention with the reason and the Issues stage');
   ok(/EMR\+ could not match the medi ref.*HTTP 404/.test(ui['2'].print_issue) && /not completed.*HTTP 409/.test(ui['3'].print_issue), 'reasons name the EMR+ answer');
-  ok(ui['4'].printer_job_reference === 'PRINT-20261125-1000-P01-R02' && !ui['1'], 'a deal whose job reference changed gets the new one written; unchanged deals are not touched');
+  ok(ui['4'].printer_job_reference === 'PRINT-20261125-1000-P01-R02' && ui['1'].printer_job_reference === 'PRINT-20261125-1000-P01-R01', 'kept deals get their final (renumbered) job reference when claimed');
   const tr = await run('Apply batch check', { input: resOf(200, 503, 0, 429), nodes: { 'Next batch': pk4 } });
   const trj = tr[0].json; const tru = Object.fromEntries(trj.updates.map(u => [u.id, u.properties]));
-  ok(trj.cases.map(k => k.deal_id).join() === '1' && tru['2'].print_status === 'queued' && tru['3'].print_status === 'queued' && tru['4'].print_status === 'queued' && !('dealstage' in tru['2']), 'EMR+ not answering: deal is put back to Queued for the next run, not flagged');
+  ok(trj.cases.map(k => k.deal_id).join() === '1' && !tru['2'] && !tru['3'] && !tru['4'] && tru['1'].print_status === 'preparing', 'EMR+ not answering: the deal is left Queued (never claimed) for the next run, not flagged');
   const ac = await run('Apply batch check', { input: resOf(200, 403, 200, 200), nodes: { 'Next batch': pk4 } });
-  ok(/EMR_ACCESS_REFUSED/.test(ac[0].json.abort) && ac[0].json.cases.length === 0 && ac[0].json.updates.length === 4 && ac[0].json.updates.every(u => u.properties.print_status === 'queued'), 'access refused: whole batch goes back to Queued and the run stops after the write');
-  await throws(run('Pack after checks', { nodes: { 'Apply batch check': ac } }), /EMR_ACCESS_REFUSED/);
-  const pac = await run('Pack after checks', { nodes: { 'Apply batch check': ap } });
+  ok(/EMR_ACCESS_REFUSED/.test(ac[0].json.abort) && ac[0].json.cases.length === 0 && ac[0].json.updates.length === 0, 'access refused: nothing is claimed (all stay Queued) and the run stops');
+  await throws(run('Pack after checks', { input: ac, nodes: { 'Apply batch check': ac } }), /EMR_ACCESS_REFUSED/);
+  await throws(run('Pack after checks', { input: [mkitem({ status: 'error', errors: [{}] })], nodes: { 'Apply batch check': ap } }), /CLAIM_FAILED/);
+  const pac = await run('Pack after checks', { input: [mkitem({ status: 'COMPLETE' })], nodes: { 'Apply batch check': ap } });
   ok(pac[0].json.cases.length === 2 && !('updates' in pac[0].json) && pac[0].json.submission_ref === 'PRINT-20261125-1000-P01', 'checked pack passes on clean (no helper fields)');
   const bigck = await run('Apply batch check', { input: [mkitem({ statusCode: 200, headers: { 'content-length': '200000000' } }), ...resOf(200, 200, 200)], nodes: { 'Next batch': pk4 } });
   ok(bigck[0].json.cases.length === 3 && /over the limit of 150 MB/.test(bigck[0].json.updates.find(u => u.id === '1').properties.print_issue), 'oversize report caught at the check');
   const none = await run('Apply batch check', { input: resOf(404), nodes: { 'Next batch': [mkitem(mkpack(1))] } });
   ok(none[0].json.cases.length === 0 && none[0].json.updates.length === 1, 'all failed: flags written, nothing to print, loop moves to the next batch');
+  const clm = Object.fromEntries(ap[0].json.updates.map(u => [u.id, u.properties]));
+  ok(clm['1'].print_status === 'preparing' && clm['1'].dispatch_hold_printing === 'true' && clm['1'].printer_job_reference === 'PRINT-20261125-1000-P01-R01' && clm['1'].print_batch_id === 'PRINT-20261125-1000' && clm['1'].print_destination === 'Leeds BSC' && clm['4'].printer_job_reference === 'PRINT-20261125-1000-P01-R02', 'deals that stay on the batch are claimed (Preparing) with their final job reference');
   const allok = await run('Apply batch check', { input: resOf(200, 200, 200, 200), nodes: { 'Next batch': pk4 } });
-  ok(allok[0].json.cases.length === 4 && allok[0].json.updates.length === 0, 'all good: nothing written, batch unchanged');
+  ok(allok[0].json.cases.length === 4 && allok[0].json.updates.length === 4 && allok[0].json.updates.every(u => u.properties.print_status === 'preparing'), 'all good: the 4 deals are claimed');
   // weekday schedule and bank holidays
   const todayUK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
   const dowUK = new Date(todayUK + 'T12:00:00Z').getUTCDay();
@@ -167,7 +177,7 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(Math.max(...bp4[0].json.packs.map(p => p.cases.length)) === 24, 'hard cap 24 (gateway limit) even if config is higher');
   const old = (id, q) => d(id, 'S_PIP', { print_queued_at: q });
   const bpc = await run('Build batches and claim updates', { nodes: { ...bpNodes, 'Select queued deals': [mkitem({ deals: [old(31, '2026-11-01T10:00:00Z'), old(32, '2026-10-30T10:00:00Z'), old(33, '2026-10-31T10:00:00Z'), old(34, '')] })], 'Daily allowance': [mkitem({ allowance: 2 })] } });
-  ok(bpc.flatMap(x => x.json.inputs).map(u => u.id).sort().join() === '32,33', 'daily allowance: oldest queued first');
+  ok(bpc[0].json.packs.flatMap(p => p.cases).map(k => k.deal_id).sort().join() === '32,33', 'daily allowance: oldest queued first');
   const lp = await run('List batches', { input: [mkitem({ status: 'COMPLETE', results: [] })], nodes: { 'Build batches and claim updates': bp } }); ok(lp.length === 2, 'list batches');
   await throws(run('List batches', { input: [mkitem({ errors: [{}] })], nodes: { 'Build batches and claim updates': bp } }), /CLAIM_FAILED/);
 

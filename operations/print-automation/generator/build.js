@@ -29,14 +29,16 @@ const cfg = {
   retry_until_time: '16:30', // ... every 30 minutes until this time; if the printer is still offline an alert is sent and the next weekday run tries again
   bank_holidays: ['2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'], // England and Wales; dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   link_valid_minutes: 30,
+  max_batches_per_run: 2, // most batches one run will print (each run claims and prints at most this many; the rest stay Queued for the next run). 0 = no limit. Keeps one run within what the output tray holds
+  require_postcode_in_destination: true, // a destination with no UK postcode (just a company name) is held as Waiting for destination address instead of printing
   reports_per_call: 20, // reports per print batch (manifest + this many reports). Change it here; the gateway's own ceiling is 24
   max_reports_per_day: 200,
   duplex: true,
   colour: false,
   pipeline_id: '28557963',
   awaiting_print_stages: ['64932357', '64932356'],
-  issue_stages: { PIP: '66989570', UC: '66989569', HAA: '66989569' }, // PIP - Issues; UC113/HSA - Issues
-  awaiting_stage_by_type: { PIP: '64932357', UC: '64932356', HAA: '64932356' },
+  issue_stages: { PIP: '66989570', UC: '66989569', HAA: '66989569', DLA: '66989570' }, // PIP - Issues; UC113/HSA - Issues; DLA uses the PIP Issues stage because DLA deals wait at the same stage as PIP (confirm)
+  awaiting_stage_by_type: { PIP: '64932357', UC: '64932356', HAA: '64932356', DLA: '64932357' },
   pip_invoicing_stage: '64932358',
   completed_stage: '65006208', // Completed: where UC/HSA and HAA deals move after a successful print
   cancelled_rejected_stages: ['81292295', '65056856'],
@@ -50,8 +52,8 @@ const cfg = {
     queued: 'queued', preparing: 'preparing', submitted: 'sent_to_printer', printed: 'printed', issue: 'needs_attention',
     action_none: 'none', action_problem: 'report_problem', action_resolve: 'resolve_problem', action_print: 'print_reprint', action_manual: 'printed_manually'
   },
-  report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA' },
-  print_enabled: { PIP: false, UC: true, HAA: true, DLA: false }, // one switch per report type. false = deals of that type are left Queued and untouched until you switch it back on. PIP is off for now. DLA has no effect until its report type and stages are set up (it is not printed today)
+  report_types: { 'PIP': 'PIP', 'UC&ESA': 'UC', 'Health Assessment Advisory Service': 'HAA', 'DWP - Disability Living Allowance': 'DLA' },
+  print_enabled: { PIP: false, UC: true, HAA: true, DLA: false }, // one switch per report type. false = deals of that type are left Queued and untouched until you switch it back on. PIP is off for now. DLA is allowed but switched off until you are ready
   preparing_timeout_minutes: 60,
   gateway_timeout_minutes: 30, // how long n8n waits for the gateway to answer one print call (one batch of up to 20 reports) before treating the result as unknown. A 20-report HSA batch took 15 min on 25 Nov, so 15 was too short
 };
@@ -107,6 +109,7 @@ code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day m
 code('Select queued deals', CODE.select_queued, [1760, -120]);
 add('Check report in EMR+ (no download)', 'n8n-nodes-base.httpRequest', 4.2, { method: 'HEAD', url: "={{ $('Config').first().json.cfg.emr_base + '/api/v1/instructions/medi_ref/' + $json.mediref + '/completed_report/?hubspot_deal_id=' + $json.deal_id }}", ...HDR, options: { timeout: 30000, batching: { batch: { batchSize: 4, batchInterval: 250 } }, response: { response: { fullResponse: true, neverError: true, responseFormat: 'text' } } } }, [2200, -120], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Same Header Auth credential as Fetch report from EMR+. HEAD request: nothing is downloaded or stored. 200 = report is there, 404 = medi ref not linked to the deal, 409 = not ready.', notesInFlow: true });
 code('Build batches and claim updates', CODE.build_packs, [2640, -120], 'Invalid cases go to Needs attention with the reason; valid cases are claimed as Preparing, grouped by destination and split into calls of reports_per_call (set in Config, currently 20; gateway ceiling 24).');
+add('Any start updates?', 'n8n-nodes-base.if', 2.2, { conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 }, conditions: [{ id: uid(), leftValue: "={{ ($json.inputs || []).length > 0 }}", rightValue: '', operator: { type: 'boolean', operation: 'true', singleValue: true } }], combinator: 'and' }, options: {} }, [2750, -120], { notes: 'Only waiting notes and invalid cases are written here. Deals are claimed (Preparing) one batch at a time, just before each batch prints.', notesInFlow: true });
 hsPost('Claim deals', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [2860, -120]);
 code('List batches', CODE.list_packs, [3080, -120]);
 add('Next batch', 'n8n-nodes-base.splitInBatches', 3, { batchSize: 1, options: {} }, [3300, -120], { notes: 'Output 1 (loop) = next batch. Output 0 (done) = finished.', notesInFlow: true });
@@ -127,9 +130,10 @@ hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
 code('Working day?', CODE.working_day, [880, -120], 'Scheduled runs only: ends quietly on a weekend or a date listed in Config bank_holidays (YYYY-MM-DD). Manual runs always continue.');
 link('Route', 'Working day?', 0); link('Working day?', 'Guard: any Preparing deals?');
-chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Claim deals', 'List batches', 'Next batch');
+chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Any start updates?', 'Claim deals', 'List batches', 'Next batch');
 chain('List pack deals to check', 'Check report in EMR+ (no download)', 'Apply batch check', 'Has check updates?');
 link('Next batch', 'List pack deals to check', 1);
+link('Any start updates?', 'List batches', 1);
 link('Has check updates?', 'Write check updates', 0); link('Has check updates?', 'Pack after checks', 1); link('Write check updates', 'Pack after checks');
 link('Pack after checks', 'Anything to print?'); link('Anything to print?', 'Build job links', 0); link('Anything to print?', 'Next batch', 1);
 chain('Build job links', 'Sign links', 'Build print request');
