@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {},
-      "id": "6abd16e7-4d5d-43e8-a007-1f76020bfe16",
+      "id": "facced20-9d12-4421-ae99-dfd34f8e4c61",
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
@@ -21,7 +21,7 @@
         "text": "={{ 'Workflow: ' + $json.workflow.name + '\\nFailed node: ' + ($json.execution.lastNodeExecuted || '') + '\\nError: ' + ($json.execution.error && $json.execution.error.message) + '\\nExecution: ' + ($json.execution.url || '') + '\\n\\nDo not re-run blindly: check the printer queue and deals in Preparing / Needs attention first.' }}",
         "options": {}
       },
-      "id": "3381f304-2470-4326-866f-156d97c3ca5a",
+      "id": "18c1a7a5-623c-4bdd-8c4c-1eb740ee50ed",
       "name": "Email Ops and Engineering",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
