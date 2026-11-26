@@ -66,15 +66,16 @@ if(problems.length){
     const hm=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
     const sd=$getWorkflowStaticData('global');
     if(hm>=re){ throw new Error('PRINTER_NOT_READY_GAVE_UP: '+why+'. Checked every 30 minutes since '+rs+' and it did not come back by '+re+'. Nothing was claimed or printed; deals stay Queued and the next weekday run will try again. Fix the printer, then start a manual run if it cannot wait.'); }
-    if(sd.offline_alert_day!==day){ sd.offline_alert_day=day; throw new Error('PRINTER_NOT_READY_WILL_RETRY: '+why+'. Nothing was claimed or printed. n8n checks again every 30 minutes until '+re+' and runs the batches once the printer is online.'); }
+    if(sd.offline_alert_day!==day){ sd.offline_alert_day=day; sd.start_day=day; throw new Error('PRINTER_NOT_READY_WILL_RETRY: '+why+'. Nothing was claimed or printed. n8n checks again every 30 minutes until '+re+' and runs the batches once the printer is online.'); }
     return [];
   }
 }
-if(sched){ $getWorkflowStaticData('global').ran_day=day; }
+let note_text=''; const sdr=$getWorkflowStaticData('global');
+if(sched){ sdr.ran_day=day; if(sdr.start_day!==day&&!notes.length){ sdr.start_day=day; const ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()); note_text='[START] '+ts+' (UK): first gateway check of the day. Print gateway ONLINE (spooler '+(sp||'unknown')+', printer '+(ps||'unknown')+'). Scheduled printing starts now.'; } }
 const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
 const offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;
 const day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;
-return [{json:{printer_state:notes.length?'dry_run_not_checked: '+notes.join('; '):state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];`;
+return [{json:{note_text,printer_state:notes.length?'dry_run_not_checked: '+notes.join('; '):state,warning:String(b.warning||''),day_start_ms:String(day_start_ms)}}];`;
 
 CODE.daily_allowance = String.raw`const c=$('Apply control settings').first().json.cfg;
 const sent=Number(($input.first().json||{}).total||0);
@@ -485,3 +486,43 @@ const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const p=(r.bo
 if(c.dry_run===true) return [{json:pack}];
 if(sc!==200||!p||String(p.print_paused)==='true') return [];
 return [{json:pack}];`;
+
+
+// ------------------------------------------------------------------ company notes
+CODE.make_note = String.raw`const c=$('Config').first().json.cfg;
+return $input.all().filter(i=>i.json&&i.json.note_text).map(i=>({json:{body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:String(i.json.note_text).slice(0,2000)},associations:[{to:{id:String(c.control_company_id)},types:[{associationCategory:'HUBSPOT_DEFINED',associationTypeId:190}]}]}}}));`;
+
+CODE.config_changes = String.raw`const r=$input.first().json||{}; const p=(r.body||{}).properties;
+if(Number(r.statusCode)!==200||!p) return [];
+const KEYS=['print_paused','printing_on_pip','printing_on_uc','printing_on_hsa','printing_on_dla','max_batches_per_run','max_reports_per_run','reports_per_call','max_reports_per_day','run_start_time','run_end_time','run_days'];
+const cur={}; for(const k of KEYS) cur[k]=String(p[k]==null?'':p[k]);
+const sd=$getWorkflowStaticData('global'); const prev=sd.ctl_seen; sd.ctl_seen=cur;
+if(!prev) return [];
+const ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date())+' (UK)';
+const show=v=>v===''?'(blank = Config value)':v;
+const out=[];
+const wasP=prev.print_paused==='true', isP=cur.print_paused==='true';
+if(wasP!==isP) out.push({json:{note_text:isP?'[PAUSED] '+ts+': Print paused was ticked on the Print control company. Scheduled runs end quietly until it is cleared; a run in progress stops before its next batch.':'[UNPAUSED] '+ts+': Print paused was cleared on the Print control company. Scheduled printing can run again.'}});
+const ch=KEYS.filter(k=>k!=='print_paused'&&prev[k]!==cur[k]).map(k=>k+': '+show(prev[k])+' -> '+show(cur[k]));
+if(ch.length) out.push({json:{note_text:'[CONFIG] '+ts+': Print control company changed (old -> new). '+ch.join('; ')+'.'}});
+return out;`;
+
+CODE.run_summary = String.raw`const c=$('Config').first().json.cfg;
+const runs=name=>{ const a=[]; for(let i=0;i<300;i++){ let x; try{ x=$(name).all(0,i); }catch(e){ break; } if(!x||!x.length) break; a.push(x); } return a; };
+let sched=false; try{ sched=$('Route').first().json.scheduled===true; }catch(e){}
+const outs=runs('Print outcome').map(a=>a[0].json); const dry=runs('Build print request').map(a=>a[0].json);
+const ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date())+' (UK)';
+const how=sched?'scheduled':'manual';
+if(!outs.length){
+  const n=dry.reduce((t,j)=>t+(((j.meta||{}).cases)||[]).length,0);
+  if(c.dry_run===true&&n) return [{json:{note_text:'[RUN] '+ts+': '+how+' DRY RUN finished. '+dry.length+' batch(es), '+n+' report(s) checked, nothing sent to the printer.'}}];
+  return [];
+}
+let ok=0, failed=0, unknown=0, rejected=0, nomanifest=0; const ids=[];
+for(const o of outs){ ok+=Number(o.jobs_ok||0); failed+=Number(o.jobs_failed||0); if(o.kind==='unknown') unknown++; if(o.kind==='rejected') rejected++; if(o.kind==='results'&&o.manifest_ok===false) nomanifest++; for(const m of (o.issue_moves||[])) ids.push(String(m.id)); }
+let t='[RUN] '+ts+': '+how+' run finished. '+outs.length+' batch(es), '+ok+' report(s) printed, '+failed+' failed.';
+if(unknown) t+=' '+unknown+' batch(es) with print result unknown: check the paper output before any reprint.';
+if(rejected) t+=' '+rejected+' batch(es) rejected by the gateway.';
+if(nomanifest) t+=' '+nomanifest+' manifest sheet(s) did not print.';
+if(ids.length) t+=' Needs attention (deal IDs): '+[...new Set(ids)].join(', ')+'.';
+return [{json:{note_text:t}}];`;

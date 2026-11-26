@@ -39,7 +39,7 @@ const b64 = s => Buffer.from(s).toString('base64');
 async function run(name, { input = [], nodes = {}, cfgOverride, runIndex = 0, http, sd = {} } = {}) {
   const c = cfgOverride || real;
   const env = { 'Apply control settings': [mkitem({ cfg: c })], ...nodes, Config: [mkitem({ cfg: c, flow: 'x', body: nodes.__body, query: nodes.__query })] };
-  const $ = n => { const a = env[n]; if (!a) throw new Error('Node not executed: ' + n); return { first: () => a[0], all: () => a, itemMatching: i => a[i], item: a[0] }; };
+  const $ = n => { const a = env[n]; if (!a) throw new Error('Node not executed: ' + n); return { first: () => a[0], all: (b, r) => { if (r === undefined || !a.runs) return a; if (r >= a.runs.length) throw new Error('Invalid run index'); return a.runs[r]; }, itemMatching: i => a[i], item: a[0] }; };
   const $input = { all: () => input, first: () => input[0] };
   const ctx = { helpers: {
     async httpRequest(o) { return http(o); },
@@ -441,6 +441,31 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok(pollRun([{ json: { results: [] } }]).length === 0, 'poll: nothing to do');
   // rebuild sandbox so the committed file is the sandbox one
   execSync('node build.js', { cwd: __dirname });
+
+  // ---------- company notes ----------
+  { const mk = await run('Make note', { input: [mkitem({ note_text: '[RUN] x' }), mkitem({})] });
+    ok(mk.length === 1 && mk[0].json.body.properties.hs_note_body === '[RUN] x' && mk[0].json.body.associations[0].to.id === real.control_company_id && mk[0].json.body.associations[0].types[0].associationTypeId === 190, 'Make note: one note body per item with text, associated to the Print control company');
+    const ctl = (o, sc = 200) => [mkitem({ statusCode: sc, body: { properties: o } })];
+    const sdc = {};
+    ok((await run('Config changes', { input: ctl({ print_paused: 'false', max_reports_per_day: '400' }), sd: sdc })).length === 0, 'Config changes: first read only records the baseline');
+    ok((await run('Config changes', { input: ctl({ print_paused: 'false', max_reports_per_day: '400' }), sd: sdc })).length === 0, 'Config changes: no change, no note');
+    const c1 = await run('Config changes', { input: ctl({ print_paused: 'true', max_reports_per_day: '300', run_days: 'Monday;Friday' }), sd: sdc });
+    ok(c1.length === 2 && /^\[PAUSED\]/.test(c1[0].json.note_text) && /^\[CONFIG\]/.test(c1[1].json.note_text) && /max_reports_per_day: 400 -> 300/.test(c1[1].json.note_text) && /run_days: \(blank = Config value\) -> Monday;Friday/.test(c1[1].json.note_text) && /\(UK\)/.test(c1[1].json.note_text), 'Config changes: pause note and a separate old -> new config note');
+    const c2 = await run('Config changes', { input: ctl({ print_paused: '', max_reports_per_day: '300', run_days: 'Monday;Friday' }), sd: sdc });
+    ok(c2.length === 1 && /^\[UNPAUSED\]/.test(c2[0].json.note_text), 'Config changes: unpause note (blank counts as not paused)');
+    ok((await run('Config changes', { input: ctl({}, 500), sd: sdc })).length === 0 && sdc.ctl_seen.max_reports_per_day === '300', 'Config changes: HubSpot not answering writes nothing and keeps the baseline');
+    const outA = { kind: 'results', jobs_ok: 20, jobs_failed: 0, manifest_ok: true, issue_moves: [] }, outB = { kind: 'results', jobs_ok: 18, jobs_failed: 2, manifest_ok: false, issue_moves: [{ id: '111' }, { id: '222' }] }, outC = { kind: 'unknown', jobs_ok: 0, jobs_failed: 0, issue_moves: [{ id: '333' }] };
+    const nodesR = { Route: [mkitem({ scheduled: true })] }; const po = [[mkitem(outA)], [mkitem(outB)], [mkitem(outC)]]; po.runs = po; nodesR['Print outcome'] = po;
+    const rs = await run('Run summary', { nodes: nodesR });
+    ok(rs.length === 1 && /^\[RUN\]/.test(rs[0].json.note_text) && /scheduled run finished\. 3 batch\(es\), 38 report\(s\) printed, 2 failed/.test(rs[0].json.note_text) && /result unknown/.test(rs[0].json.note_text) && /1 manifest/.test(rs[0].json.note_text) && /111, 222, 333/.test(rs[0].json.note_text), 'Run summary: totals, unknown results, manifest failure and deal IDs');
+    ok(!/[A-Za-z]{3,} [A-Za-z]{3,}, /.test('') && (await run('Run summary', { nodes: { Route: [mkitem({ scheduled: false })] } })).length === 0, 'Run summary: nothing when no batch was attempted');
+    const pr = await run('Printer ready?', { input: [mkitem({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'Normal', printerQueue: real.printer_queue } })], nodes: { 'Working day?': [mkitem({ scheduled: true })] }, cfgOverride: { ...real, dry_run: false }, sd: {} });
+    ok(/^\[START\].*ONLINE/.test(pr[0].json.note_text), 'Printer ready: first check of the day writes a START note');
+    const sdd = {}; await run('Printer ready?', { input: [mkitem({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'Normal', printerQueue: real.printer_queue } })], nodes: { 'Working day?': [mkitem({ scheduled: true })] }, cfgOverride: { ...real, dry_run: false }, sd: sdd });
+    ok(sdd.start_day === todayUK, 'Printer ready: start_day recorded');
+    const pm = await run('Printer ready?', { input: [mkitem({ statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'Normal', printerQueue: real.printer_queue } })], nodes: { 'Working day?': [mkitem({ scheduled: false })] }, cfgOverride: { ...real, dry_run: false }, sd: {} });
+    ok(!pm[0].json.note_text, 'Printer ready: manual runs write no START note');
+  }
 
   console.log('PASS', pass, 'checks');
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

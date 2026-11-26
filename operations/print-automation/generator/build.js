@@ -62,6 +62,7 @@ const cfg = {
 };
 
 // ---------- helpers ----------
+const CTL_ID = '474434180302';
 const nodes = []; const conns = {};
 const add = (name, type, typeVersion, parameters, position, extra = {}) => { nodes.push({ parameters, id: uid(), name, type, typeVersion, position, ...extra }); return name; };
 const link = (from, to, out = 0) => { conns[from] = conns[from] || { main: [] }; while (conns[from].main.length <= out) conns[from].main.push([]); conns[from].main[out].push({ node: to, type: 'main', index: 0 }); };
@@ -112,7 +113,7 @@ code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day m
 const CTL_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,printing_on_pip,printing_on_uc,printing_on_hsa,printing_on_dla,max_batches_per_run,max_reports_per_run,reports_per_call,max_reports_per_day' }}`;
 const ctlGet = (name, pos, notes) => add(name, 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: CTL_URL, ...HS, options: { timeout: 20000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, pos, { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes, notesInFlow: true });
 ctlGet('Read control settings', [1650, 40], 'Reads the Print control company in HubSpot (control_company_id in Config).');
-const SCHED_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,run_start_time,run_end_time,run_days' }}`;
+const SCHED_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,printing_on_pip,printing_on_uc,printing_on_hsa,printing_on_dla,max_batches_per_run,max_reports_per_run,reports_per_call,max_reports_per_day,run_start_time,run_end_time,run_days' }}`;
 add('Read run schedule', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: SCHED_URL, ...HS, options: { timeout: 20000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, [770, -120], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Reads Run start time, Run end time, Run days and Print paused from the Print control company. If HubSpot does not answer, Config times and days are used.', notesInFlow: true });
 code('Apply control settings', CODE.apply_control, [1870, 40], 'Print paused ticked, or HubSpot not answering => run ends quietly, nothing claimed. Otherwise any filled-in control value replaces the Config value for this run.');
 ctlGet('Read pause switch', [3410, -240], 'Before every batch: is Print paused ticked on the Print control company?');
@@ -140,8 +141,17 @@ code('Build result updates', CODE.build_result_updates, [4840, 0], 'Stage handof
 hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [5060, 0]);
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
 code('Working day?', CODE.working_day, [990, -120], 'Scheduled runs only: ends quietly outside the Run days / Run start time / Run end time set on the Print control company (Config values if blank), on a date listed in Config bank_holidays (YYYY-MM-DD), when Print paused is ticked, or after today\'s run has gone ahead. Manual runs always continue.');
+// company notes: every note goes through Make note -> Post note; a failed post never affects the run
+code('Make note', CODE.make_note, [1100, -420], 'Turns note_text from the side branches into a HubSpot note body (Print control company). Notes use deal IDs only, UK times.');
+add('Post note', 'n8n-nodes-base.httpRequest', 4.2, { method: 'POST', url: `={{ ${C}.hubspot_base + '/crm/v3/objects/notes' }}`, ...HS, sendBody: true, specifyBody: 'json', jsonBody: '={{ $json.body }}', options: { timeout: 20000 } }, [1320, -420], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Creates the note on the Print control company. Needs the crm.objects.notes.write and crm.objects.companies.write scopes on the HubSpot key.', notesInFlow: true });
+link('Make note', 'Post note');
+code('Config changes', CODE.config_changes, [990, -420], 'Compares the Print control company values with the last tick and writes [PAUSED], [UNPAUSED] and [CONFIG] (old -> new) notes. The first run after a restart only records the values.');
+link('Read run schedule', 'Config changes'); link('Config changes', 'Make note');
+code('Run summary', CODE.run_summary, [3300, 140], 'Loop finished: one [RUN] note with batches, reports printed, failures and the deal IDs that need attention. Nothing if no batch was attempted.');
+link('Next batch', 'Run summary', 0); link('Run summary', 'Make note');
 link('Route', 'Read run schedule', 0); link('Read run schedule', 'Working day?'); link('Working day?', 'Guard: any Preparing deals?');
 chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Read control settings', 'Apply control settings', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Any start updates?', 'Claim deals', 'List batches', 'Next batch');
+link('Printer ready?', 'Make note');
 chain('List pack deals to check', 'Check report in EMR+ (no download)', 'Apply batch check', 'Has check updates?');
 chain('Read pause switch', 'Pause check', 'List pack deals to check'); link('Next batch', 'Read pause switch', 1);
 link('Any start updates?', 'List batches', 1);
@@ -221,6 +231,22 @@ const en = [], ec = {};
 en.push({ parameters: {}, id: uid(), name: 'Error Trigger', type: 'n8n-nodes-base.errorTrigger', typeVersion: 1, position: [0, 0] });
 en.push({ parameters: { fromEmail: 'REPLACE_FROM_EMAIL', toEmail: 'REPLACE_OPS_EMAIL', subject: '=Print automation FAILED: {{ $json.workflow.name }}', emailFormat: 'text', text: "={{ 'Workflow: ' + $json.workflow.name + '\\nFailed node: ' + ($json.execution.lastNodeExecuted || '') + '\\nError: ' + ($json.execution.error && $json.execution.error.message) + '\\nExecution: ' + ($json.execution.url || '') + '\\n\\nDo not re-run blindly: check the printer queue and deals in Preparing / Needs attention first.' }}", options: {} }, id: uid(), name: 'Email Ops and Engineering', type: 'n8n-nodes-base.emailSend', typeVersion: 2.1, position: [240, 0], notes: 'Bind an SMTP credential. Set REPLACE_ values. No claimant data is included.', notesInFlow: true });
 ec['Error Trigger'] = { main: [[{ node: 'Email Ops and Engineering', type: 'main', index: 0 }]] };
+const en2 = [], ec2 = {};
+en2.push({ parameters: {}, id: uid(), name: 'Error Trigger', type: 'n8n-nodes-base.errorTrigger', typeVersion: 1, position: [0, 0] });
+en2.push({ parameters: { jsCode: String.raw`const e=$input.first().json||{}; const ex=e.execution||{}; const wf=(e.workflow||{}).name||'print workflow';
+const ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date())+' (UK)';
+const msg=String((ex.error||{}).message||'unknown error').replace(/https?:[^ ]+/g,'[url]').slice(0,500);
+const node=String(ex.lastNodeExecuted||'unknown node');
+const mk=t=>({json:{body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:t},associations:[{to:{id:'474434180302'},types:[{associationCategory:'HUBSPOT_DEFINED',associationTypeId:190}]}]}}});
+const out=[];
+if(/^PRINTER_NOT_READY_WILL_RETRY/.test(msg)) out.push(mk('[START] '+ts+': first gateway check of the day. Print gateway OFFLINE or not ready. n8n checks again every 30 minutes.'));
+out.push(mk('[ALERT] '+ts+': '+msg+' (execution '+String(ex.id||'?')+', node '+node+')'));
+return out;` }, id: uid(), name: 'Make alert notes', type: 'n8n-nodes-base.code', typeVersion: 2, position: [240, 0] });
+en2.push({ parameters: { method: 'POST', url: 'https://api.hubapi.com/crm/v3/objects/notes', ...HS, sendBody: true, specifyBody: 'json', jsonBody: '={{ $json.body }}', options: { timeout: 20000 } }, id: uid(), name: 'Post alert note', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [480, 0], retryOnFail: true, maxTries: 2, waitBetweenTries: 2000 });
+ec2['Error Trigger'] = { main: [[{ node: 'Make alert notes', type: 'main', index: 0 }]] };
+ec2['Make alert notes'] = { main: [[{ node: 'Post alert note', type: 'main', index: 0 }]] };
+const errNote = { name: 'Lalu Print - Error note (alerts as company notes)', nodes: en2, connections: ec2, active: false, settings: { executionOrder: 'v1', timezone: 'Europe/London', saveDataSuccessExecution: 'none' }, pinData: {}, tags: [] };
+fs.writeFileSync(require('path').join(__dirname,'..','n8n','Lalu_Print_Error_Note.json'), JSON.stringify(errNote, null, 2));
 const err = { name: 'Lalu Print - Error alert', nodes: en, connections: ec, active: false, settings: { executionOrder: 'v1', timezone: 'Europe/London' }, pinData: {}, tags: [] };
 
 fs.mkdirSync(require('path').join(__dirname,'..','n8n'), { recursive: true });
