@@ -27,21 +27,29 @@ if(n>0){
 }
 return [{json:{ok:true}}];`;
 
-CODE.working_day = String.raw`const c=$('Config').first().json.cfg; const it=$input.first();
+CODE.working_day = String.raw`const c=$('Config').first().json.cfg; const it=$('Route').first();
 if(!it.json.scheduled) return [it];
+// Schedule comes from the Print control company (run_start_time, run_end_time, run_days); a blank or invalid value falls back to Config. Print paused ends the tick quietly, so a paused day makes no printer check and sends no alert.
+const r=$input.first().json||{}; const p=(r.body||{}).properties||{};
+if(String(p.print_paused)==='true') return [];
+const hhmm=v=>{ const m=/^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(v==null?'':v)); if(!m) return null; const h=+m[1], mi=+m[2]; return (h<24&&mi<60)?String(h).padStart(2,'0')+':'+m[2]:null; };
+const start=hhmm(p.run_start_time)||c.run_start_time; const end=hhmm(p.run_end_time)||c.retry_until_time;
+const ALL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const fromCo=String(p.run_days||'').split(';').map(x=>x.trim()).filter(x=>ALL.includes(x));
+const days=fromCo.length?fromCo:(c.run_days||ALL.slice(0,5));
 const d=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London'}).format(new Date());
 const hm=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
-const dow=new Date(d+'T12:00:00Z').getUTCDay();
-if(dow===0||dow===6) return [];
+const dn=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'long'}).format(new Date());
+if(!days.includes(dn)) return [];
 if((c.bank_holidays||[]).includes(d)) return [];
-if(hm<c.run_start_time||hm>c.retry_until_time) return [];
+if(hm<start||hm>end) return [];
 const sd=$getWorkflowStaticData('global');
 if(sd.ran_day===d) return [];
-return [it];`;
+return [{json:{...it.json,run_start:start,run_end:end}}];`;
 
 CODE.printer_ready = String.raw`const c=$('Config').first().json.cfg;
 const r=$input.first().json||{}; const sc=Number(r.statusCode||0); const b=r.body||{};
-let sched=false; try{ sched=$('Working day?').first().json.scheduled===true; }catch(e){}
+let sched=false; let rs=c.run_start_time, re=c.retry_until_time; try{ const w=$('Working day?').first().json; sched=w.scheduled===true; rs=w.run_start||rs; re=w.run_end||re; }catch(e){}
 const problems=[]; const stop=(why)=>{ if(!problems.length) problems.push(why); };
 if(sc!==200) stop('the print gateway is unreachable or returned HTTP '+(sc||'no response'));
 const sp=String(b.spoolerStatus||''); const q=String(b.printerQueue||'');
@@ -57,8 +65,8 @@ if(problems.length){
   else {
     const hm=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
     const sd=$getWorkflowStaticData('global');
-    if(hm>=c.retry_until_time){ throw new Error('PRINTER_NOT_READY_GAVE_UP: '+why+'. Checked every 30 minutes since '+c.run_start_time+' and it did not come back by '+c.retry_until_time+'. Nothing was claimed or printed; deals stay Queued and the next weekday run will try again. Fix the printer, then start a manual run if it cannot wait.'); }
-    if(sd.offline_alert_day!==day){ sd.offline_alert_day=day; throw new Error('PRINTER_NOT_READY_WILL_RETRY: '+why+'. Nothing was claimed or printed. n8n checks again every 30 minutes until '+c.retry_until_time+' and runs the batches once the printer is online.'); }
+    if(hm>=re){ throw new Error('PRINTER_NOT_READY_GAVE_UP: '+why+'. Checked every 30 minutes since '+rs+' and it did not come back by '+re+'. Nothing was claimed or printed; deals stay Queued and the next weekday run will try again. Fix the printer, then start a manual run if it cannot wait.'); }
+    if(sd.offline_alert_day!==day){ sd.offline_alert_day=day; throw new Error('PRINTER_NOT_READY_WILL_RETRY: '+why+'. Nothing was claimed or printed. n8n checks again every 30 minutes until '+re+' and runs the batches once the printer is online.'); }
     return [];
   }
 }

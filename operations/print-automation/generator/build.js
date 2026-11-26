@@ -25,7 +25,8 @@ const cfg = {
   link_secret: 'REPLACE_LINK_SECRET',
   dry_run: true,
   max_report_mb: 150,
-  run_start_time: '08:30', // scheduled runs check the printer from this time (UK time, HH:MM) ...
+  run_start_time: '08:30', // fallback if the Print control company has no valid Run start time: scheduled runs check the printer from this time (UK time, HH:MM) ...
+  run_days: ['Monday','Tuesday','Wednesday','Thursday','Friday'], // fallback if the company has no Run days; the trigger fires every 30 minutes on every day and this gate decides
   retry_until_time: '16:30', // ... every 30 minutes until this time; if the printer is still offline an alert is sent and the next weekday run tries again
   bank_holidays: ['2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'], // England and Wales; dates (YYYY-MM-DD) the scheduled run skips, e.g. '2026-12-25'; update every year
   link_valid_minutes: 30,
@@ -84,8 +85,8 @@ const hsPost = (name, path, bodyExpr, pos, extraOpts = {}, extra = retry) => add
 const flowSet = (name, flow, pos) => add(name, 'n8n-nodes-base.set', 3.4, { assignments: { assignments: [{ id: uid(), name: 'flow', value: flow, type: 'string' }] }, includeOtherFields: true, options: {} }, pos);
 
 // ---------- triggers + config + routing ----------
-note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (Mon–Fri, first check 08:30 UK then every 30 min until the printer is online or 16:30; skips bank_holidays; or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.', [0, -420], 600, 200);
-add('Weekday print run (every 30 min)', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '0,30 8-16 * * 1-5' }] } }, [0, 0]);
+note('README', '# Lalu print automation (Phase 1)\nOne workflow, four flows:\n**1 Print run** (schedule from the Print control company (default Mon–Fri, 08:30 to 16:30 UK, checked every 30 min until the printer is online); skips bank_holidays; or manual) · **2 Stuck check** (every 15 min) · **3 Staff actions** (HubSpot webhook) · **4 Report link** (the print gateway calls this to fetch each PDF).\nHubSpot is the only state store. Edit settings ONLY in the **Config** node. Reports are streamed from EMR+ to the gateway and never stored. See README.md for bindings. Activate only after the pilot checklist.', [0, -420], 600, 200);
+add('Weekday print run (every 30 min)', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'cronExpression', expression: '0,30 * * * *' }] } }, [0, 0]);
 add('Manual print run', 'n8n-nodes-base.manualTrigger', 1, {}, [0, 120]);
 add('Every 15 min stuck check', 'n8n-nodes-base.scheduleTrigger', 1.2, { rule: { interval: [{ field: 'minutes', minutesInterval: 15 }] } }, [0, 300]);
 { add('Staff action webhook', 'n8n-nodes-base.webhook', 2, { httpMethod: 'POST', path: LIVE ? 'lalu-print-action-ops' : 'lalu-print-action', responseMode: 'responseNode', options: {} }, [0, 480], { notes: 'Target of a HubSpot private app webhook subscription: deal.propertyChange on print_action (event batches are accepted). No credential: HubSpot cannot send a custom header, and the flow trusts nothing in the payload except the deal ID. It re-reads the deal and acts only on what the deal record says. Also accepts {"deal_id": "..."}. Replies 200 immediately.', notesInFlow: true }); }
@@ -111,6 +112,8 @@ code('Daily allowance', CODE.daily_allowance, [1980, 40], 'max_reports_per_day m
 const CTL_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,printing_on_pip,printing_on_uc,printing_on_hsa,printing_on_dla,max_batches_per_run,max_reports_per_run,reports_per_call,max_reports_per_day' }}`;
 const ctlGet = (name, pos, notes) => add(name, 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: CTL_URL, ...HS, options: { timeout: 20000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, pos, { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes, notesInFlow: true });
 ctlGet('Read control settings', [1650, 40], 'Reads the Print control company in HubSpot (control_company_id in Config).');
+const SCHED_URL = `={{ ${C}.hubspot_base + '/crm/v3/objects/companies/' + ${C}.control_company_id + '?properties=print_paused,run_start_time,run_end_time,run_days' }}`;
+add('Read run schedule', 'n8n-nodes-base.httpRequest', 4.2, { method: 'GET', url: SCHED_URL, ...HS, options: { timeout: 20000, response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } } } }, [770, -120], { retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: 'continueRegularOutput', notes: 'Reads Run start time, Run end time, Run days and Print paused from the Print control company. If HubSpot does not answer, Config times and days are used.', notesInFlow: true });
 code('Apply control settings', CODE.apply_control, [1870, 40], 'Print paused ticked, or HubSpot not answering => run ends quietly, nothing claimed. Otherwise any filled-in control value replaces the Config value for this run.');
 ctlGet('Read pause switch', [3410, -240], 'Before every batch: is Print paused ticked on the Print control company?');
 code('Pause check', CODE.pause_check, [3520, -330], 'Paused (or HubSpot not answering) => run ends; this batch stays Queued. Otherwise passes the batch on.');
@@ -136,8 +139,8 @@ hsPost('Read current stages', '/crm/v3/objects/deals/batch/read', "={{ {properti
 code('Build result updates', CODE.build_result_updates, [4840, 0], 'Stage handoff only if the deal is still at an awaiting-printing stage right now.');
 hsPost('Write print results', '/crm/v3/objects/deals/batch/update', '={{ {inputs:$json.inputs} }}', [5060, 0]);
 code('Stop if printer result unsafe', CODE.stop_if_unsafe, [5280, 0]);
-code('Working day?', CODE.working_day, [880, -120], 'Scheduled runs only: ends quietly on a weekend or a date listed in Config bank_holidays (YYYY-MM-DD). Manual runs always continue.');
-link('Route', 'Working day?', 0); link('Working day?', 'Guard: any Preparing deals?');
+code('Working day?', CODE.working_day, [990, -120], 'Scheduled runs only: ends quietly outside the Run days / Run start time / Run end time set on the Print control company (Config values if blank), on a date listed in Config bank_holidays (YYYY-MM-DD), when Print paused is ticked, or after today\'s run has gone ahead. Manual runs always continue.');
+link('Route', 'Read run schedule', 0); link('Read run schedule', 'Working day?'); link('Working day?', 'Guard: any Preparing deals?');
 chain('Guard: any Preparing deals?', 'Stop if run unfinished', 'Printer status check', 'Printer ready?', 'Read control settings', 'Apply control settings', 'Count sent today', 'Daily allowance', 'Read queue', 'Select queued deals', 'Build batches and claim updates', 'Any start updates?', 'Claim deals', 'List batches', 'Next batch');
 chain('List pack deals to check', 'Check report in EMR+ (no download)', 'Apply batch check', 'Has check updates?');
 chain('Read pause switch', 'Pause check', 'List pack deals to check'); link('Next batch', 'Read pause switch', 1);

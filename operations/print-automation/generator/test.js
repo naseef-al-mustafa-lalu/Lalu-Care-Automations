@@ -22,7 +22,7 @@ const cfg = JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOu
 ok(cfg.link_secret === 'REPLACE_LINK_SECRET' && cfg.emr_base === 'https://lalucare.uat.lalu.co.uk', 'secret is a placeholder and EMR host is the UAT address');
 // single entry per flow, 4-way route
 const route = wf.nodes.find(n => n.name === 'Route'); ok(route.parameters.rules.values.length === 4, 'four flows');
-const trg = wf.nodes.find(n => n.name === 'Weekday print run (every 30 min)'); ok(trg.parameters.rule.interval[0].expression === '0,30 8-16 * * 1-5' && wf.settings.timezone === 'Europe/London', 'every 30 minutes 08:00-16:30 UK, Monday to Friday (window set in Config)');
+const trg = wf.nodes.find(n => n.name === 'Weekday print run (every 30 min)'); ok(trg.parameters.rule.interval[0].expression === '0,30 * * * *' && wf.settings.timezone === 'Europe/London', 'every 30 minutes 08:00-16:30 UK, Monday to Friday (window set in Config)');
 ok(/gateway_timeout_minutes/.test(wf.nodes.find(n => n.name === 'Submit to gateway').parameters.options.timeout) && JSON.parse(wf.nodes.find(n => n.name === 'Config').parameters.jsonOutput).cfg.gateway_timeout_minutes >= 10, 'gateway timeout comes from Config (default 15 minutes)');
 ok(!wf.nodes.find(n => n.name === 'Submit to gateway').retryOnFail, 'no retry on the print call');
 ok(wf.nodes.find(n => n.name === 'Report link webhook').parameters.responseMode === 'responseNode', 'link webhook replies from a node');
@@ -188,19 +188,30 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   // weekday schedule and bank holidays
   const todayUK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
   const dowUK = new Date(todayUK + 'T12:00:00Z').getUTCDay();
-  ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [todayUK] } })).length === 0, 'scheduled run skips a bank holiday');
-  ok((await run('Working day?', { input: [mkitem({})], cfgOverride: { ...real, bank_holidays: [todayUK] } })).length === 1, 'manual run ignores bank holidays');
-  ok(((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...real, bank_holidays: [], run_start_time: '00:00', retry_until_time: '23:59' } })).length === 1) === (dowUK >= 1 && dowUK <= 5), 'scheduled run goes ahead only on weekdays');
-  // retry window and once-a-day guard
-  const wide = { ...real, bank_holidays: [], run_start_time: '00:00', retry_until_time: '23:59' };
-  if (dowUK >= 1 && dowUK <= 5) {
-    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...wide, run_start_time: '25:00' } })).length === 0, 'scheduled tick before the start time does nothing');
-    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: { ...wide, retry_until_time: '-' } })).length === 0, 'scheduled tick after the cut-off does nothing');
-    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: wide, sd: { ran_day: todayUK } })).length === 0, 'scheduled tick after today\'s run has gone ahead does nothing');
-    ok((await run('Working day?', { input: [mkitem({ scheduled: true })], cfgOverride: wide, sd: { ran_day: '2000-01-01' } })).length === 1, 'a run on an earlier day does not block today');
-  }
-  ok((await run('Working day?', { input: [mkitem({})], cfgOverride: { ...wide, run_start_time: '25:00' }, sd: { ran_day: todayUK } })).length === 1, 'manual run ignores the window and the daily guard');
-  ok(wf.nodes.find(n => n.name === 'Weekday print run (every 30 min)').parameters.rule.interval[0].expression === '0,30 8-16 * * 1-5', 'cron is Monday to Friday');
+  const co = (props, sc = 200) => [mkitem({ statusCode: sc, body: sc === 200 ? { id: '1', properties: props } : {} })];
+  const wd = (scheduled, props, cfgO, sd, sc) => run('Working day?', { input: co(props || {}, sc), nodes: { Route: [mkitem({ scheduled })] }, cfgOverride: cfgO || real, sd: sd || {} });
+  const wide = { ...real, bank_holidays: [], run_start_time: '00:00', retry_until_time: '23:59', run_days: ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] };
+  const dnUK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'long' }).format(new Date());
+  const otherDay = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].find(x => x !== dnUK);
+  ok((await wd(true, {}, { ...wide, bank_holidays: [todayUK] })).length === 0, 'scheduled run skips a bank holiday');
+  ok((await wd(false, {}, { ...wide, bank_holidays: [todayUK] })).length === 1, 'manual run ignores bank holidays');
+  ok((await wd(true, {}, wide)).length === 1, 'scheduled run goes ahead inside the window on a run day');
+  ok((await wd(true, {}, { ...wide, run_days: [otherDay] })).length === 0, 'Config run_days: a day not listed does nothing');
+  ok((await wd(true, { run_days: dnUK + ';' + otherDay }, { ...wide, run_days: [otherDay] })).length === 1, 'company Run days (today listed) overrides Config');
+  ok((await wd(true, { run_days: otherDay }, wide)).length === 0, 'company Run days without today: tick does nothing');
+  ok((await wd(true, { run_days: 'Funday' }, { ...wide, run_days: [otherDay] })).length === 0, 'invalid company Run days fall back to Config');
+  ok((await wd(true, { run_start_time: '23:59', run_end_time: '23:59' }, wide)).length === (new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()) === '23:59' ? 1 : 0), 'company start/end times are used');
+  ok((await wd(true, { run_start_time: '25:00' }, wide)).length === 1, 'invalid company start time falls back to Config');
+  ok((await wd(true, { run_start_time: '8:0x' }, { ...wide, run_start_time: '25:00' })).length === 0, 'invalid company time and invalid Config time: tick does nothing');
+  { const r1 = await wd(true, { run_start_time: '00:00', run_end_time: '23:59' }, { ...wide, run_start_time: '10:00', retry_until_time: '11:00' }); ok(r1.length === 1 && r1[0].json.run_start === '00:00' && r1[0].json.run_end === '23:59' && r1[0].json.scheduled === true, 'effective window is passed on to the printer check'); }
+  ok((await wd(true, { print_paused: 'true' }, wide)).length === 0, 'Print paused: scheduled tick ends quietly before the printer check');
+  ok((await wd(false, { print_paused: 'true' }, wide)).length === 1, 'manual run is not stopped here by the pause (Apply control settings handles that)');
+  ok((await wd(true, {}, wide, {}, 502)).length === 1, 'HubSpot not answering: Config schedule is used');
+  ok((await wd(true, {}, { ...wide, run_start_time: '25:00' })).length === 0, 'scheduled tick before the start time does nothing');
+  ok((await wd(true, {}, { ...wide, retry_until_time: '-' })).length === 0, 'scheduled tick after the cut-off does nothing');
+  ok((await wd(true, {}, wide, { ran_day: todayUK })).length === 0, 'scheduled tick after today\'s run has gone ahead does nothing');
+  ok((await wd(true, {}, wide, { ran_day: '2000-01-01' })).length === 1, 'a run on an earlier day does not block today');
+  ok((await wd(false, {}, { ...wide, run_start_time: '25:00' }, { ran_day: todayUK })).length === 1, 'manual run ignores the window and the daily guard');
   const capCfg = { ...real, reports_per_call: 1 };
   const bp2 = await run('Build batches and claim updates', { nodes: bpNodes, cfgOverride: capCfg });
   ok(bp2[0].json.packs.length === 3 && bp2[0].json.packs.filter(p => p.destination === 'DWP Leeds').map(p => p.part + '/' + p.parts).join() === '1/2,2/2', 'per-call cap splits a destination into labelled parts');
