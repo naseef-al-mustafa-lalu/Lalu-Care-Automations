@@ -276,7 +276,10 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   { const m = (await cr({ statusCode: 404 }, { data: { data: b64(JSON.stringify({ error: 'hubspot_deal_id_mismatch', message: 'medi ref is not linked to this deal' })) } }))[0].json.msg;
     ok(/EMR\+ said: hubspot_deal_id_mismatch: medi ref is not linked to this deal/.test(m), 'EMR+ error text is passed on'); }
   ok(/MB, over the limit of 150 MB/.test((await cr({ statusCode: 200, headers: { 'content-length': String(150000001) } }, { data: pdfBin }))[0].json.msg), 'size header over 150 MB (decimal) -> 413 before download');
-  ok((await cr({ statusCode: 200, headers: { 'content-length': String(149999999) } }, { data: pdfBin }))[0].json.ok === true, 'size header just under 150 MB passes');
+  ok((await cr({ statusCode: 200, headers: { 'content-length': String(149999999), 'content-type': 'application/pdf' } }, { data: pdfBin }))[0].json.ok === true, 'size header just under 150 MB passes');
+  ok((await cr({ statusCode: 200, headers: { 'content-length': String(98102576), 'content-type': 'application/pdf' } }, { data: { data: b64('x') } }))[0].json.ok === true, 'a 98 MB report is passed on by its headers without being read into the code node');
+  ok((await cr({ statusCode: 200, headers: { 'content-length': String(98102576), 'content-type': 'text/html' } }, { data: pdfBin }))[0].json.status === 502, 'a big file that is not application/pdf -> 502');
+  ok((await cr({ statusCode: 200, headers: { 'content-length': String(5000000) } }, { data: { data: b64('<html>') } }))[0].json.status === 502, 'a small non-PDF is still caught by the %PDF- check');
   ok(real.max_report_mb === 150, 'Config limit is 150 MB');
   { const s = await run('Check report', { input: [mkitem({ statusCode: 200 }, { data: pdfBin })], cfgOverride: { ...real, max_report_mb: 0.00001 } }); ok(s[0].json.status === 413, 'limit comes from Config max_report_mb'); }
 

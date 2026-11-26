@@ -419,6 +419,10 @@ if(!it.binary||!it.binary.data) return bad(502,'EMR+ sent no file');
 const maxMb=Number(c.max_report_mb||150); const maxB=maxMb*1000000; // decimal MB: the smaller reading of "150 MB", so nothing is passed on that either system could refuse
 const hl=Number(((r.headers||{})['content-length'])||0);
 if(hl>maxB) return bad(413,'report is '+(hl/1000000).toFixed(1)+' MB, over the limit of '+maxMb+' MB');
+const ct=String((r.headers||{})['content-type']||'').toLowerCase();
+// Large reports (about 90 MB seen on 25 Nov) are NOT read into the code node: loading them here crashed the node, so the gateway got a 500. The size and content type from EMR+'s headers are used instead; only small reports are also checked for the %PDF- marker.
+const bigMb=Number(c.max_inspect_mb||20);
+if(hl>bigMb*1000000){ if(ct.indexOf('application/pdf')<0) return bad(502,'EMR+ did not send a PDF'); return [{json:{ok:true,retry:false},binary:{data:it.binary.data}}]; }
 const buf=await this.helpers.getBinaryDataBuffer(0,'data');
 if(buf.length<6||buf.subarray(0,5).toString()!=='%PDF-') return bad(502,'EMR+ did not send a PDF');
 if(buf.length>maxB) return bad(413,'report is '+(buf.length/1000000).toFixed(1)+' MB, over the limit of '+maxMb+' MB');
