@@ -43,8 +43,6 @@ const dn=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'long
 if(!days.includes(dn)) return [];
 if((c.bank_holidays||[]).includes(d)) return [];
 if(hm<start||hm>end) return [];
-const sd=$getWorkflowStaticData('global');
-if(sd.ran_day===d) return [];
 return [{json:{...it.json,run_start:start,run_end:end}}];`;
 
 CODE.printer_ready = String.raw`const c=$('Config').first().json.cfg;
@@ -71,7 +69,7 @@ if(problems.length){
   }
 }
 let note_text=''; const sdr=$getWorkflowStaticData('global');
-if(sched){ sdr.ran_day=day; if(sdr.start_day!==day&&!notes.length){ sdr.start_day=day; const ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()); note_text='[START] '+ts+' (UK): first gateway check of the day. Print gateway ONLINE (spooler '+(sp||'unknown')+', printer '+(ps||'unknown')+'). Scheduled printing starts now.'; } }
+if(sched){ if(sdr.start_day!==day&&!notes.length){ sdr.start_day=day; const ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()); note_text='[START] '+ts+' (UK): first gateway check of the day. Print gateway ONLINE (spooler '+(sp||'unknown')+', printer '+(ps||'unknown')+'). Scheduled printing starts now.'; } }
 const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
 const offset=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-Math.floor(Date.now()/1000)*1000;
 const day_start_ms=Date.UTC(+p.year,+p.month-1,+p.day)-offset;

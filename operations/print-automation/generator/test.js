@@ -209,9 +209,8 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
   ok((await wd(true, {}, wide, {}, 502)).length === 1, 'HubSpot not answering: Config schedule is used');
   ok((await wd(true, {}, { ...wide, run_start_time: '25:00' })).length === 0, 'scheduled tick before the start time does nothing');
   ok((await wd(true, {}, { ...wide, retry_until_time: '-' })).length === 0, 'scheduled tick after the cut-off does nothing');
-  ok((await wd(true, {}, wide, { ran_day: todayUK })).length === 0, 'scheduled tick after today\'s run has gone ahead does nothing');
-  ok((await wd(true, {}, wide, { ran_day: '2000-01-01' })).length === 1, 'a run on an earlier day does not block today');
-  ok((await wd(false, {}, { ...wide, run_start_time: '25:00' }, { ran_day: todayUK })).length === 1, 'manual run ignores the window and the daily guard');
+  ok((await wd(true, {}, wide, { ran_day: todayUK })).length === 1, 'no once-a-day limit: every scheduled tick in the window can run');
+  ok((await wd(false, {}, { ...wide, run_start_time: '25:00' })).length === 1, 'manual run ignores the window');
   const capCfg = { ...real, reports_per_call: 1 };
   const bp2 = await run('Build batches and claim updates', { nodes: bpNodes, cfgOverride: capCfg });
   ok(bp2[0].json.packs.length === 3 && bp2[0].json.packs.filter(p => p.destination === 'DWP Leeds').map(p => p.part + '/' + p.parts).join() === '1/2,2/2', 'per-call cap splits a destination into labelled parts');
@@ -305,8 +304,8 @@ const pdfCheck = buf => { // structural check with qpdf (if present)
     ok((await run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: live, nodes: schedNodes, sd: sdx })).length === 0, 'second offline check the same day is quiet and ends the run');
     await throws(run('Printer ready?', { input: [mkitem({ statusCode: 0 })], cfgOverride: { ...live, retry_until_time: '00:00' }, nodes: schedNodes, sd: sdx }), /PRINTER_NOT_READY_GAVE_UP/);
     const sdy = {}; const good = { statusCode: 200, body: { status: 'online', spoolerStatus: 'Running', printerStatus: 'Normal', printerQueue: real.printer_queue } };
-    ok((await run('Printer ready?', { input: [mkitem(good)], cfgOverride: live, nodes: schedNodes, sd: sdy })).length === 1 && sdy.ran_day === todayUK0, 'online scheduled check goes ahead and records today');
-    const sdm = {}; await run('Printer ready?', { input: [mkitem(good)], cfgOverride: live, sd: sdm }); ok(!sdm.ran_day, 'manual run does not set the daily flag');
+    ok((await run('Printer ready?', { input: [mkitem(good)], cfgOverride: live, nodes: schedNodes, sd: sdy })).length === 1 && sdy.start_day === todayUK0, 'online scheduled check goes ahead and records the START day');
+    const sdm = {}; await run('Printer ready?', { input: [mkitem(good)], cfgOverride: live, sd: sdm }); ok(!sdm.start_day, 'manual run does not set the START flag');
     const sdb = { }; const blk = [mkitem({ total: 2 })];
     await throws(run('Stop if run unfinished', { input: blk, cfgOverride: live, nodes: schedNodes, sd: sdb }), /PRINT_RUN_BLOCKED/);
     ok((await run('Stop if run unfinished', { input: blk, cfgOverride: live, nodes: schedNodes, sd: sdb })).length === 0, 'scheduled blocked alert is sent once a day'); }

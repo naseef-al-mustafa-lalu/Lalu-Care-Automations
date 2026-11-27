@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {},
-      "id": "05d9d0cb-c91f-4470-a7f9-7e0e6d5d0148",
+      "id": "dc1e9ff8-9480-4505-9441-6f53714c5d27",
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
@@ -16,7 +16,7 @@
       "parameters": {
         "jsCode": "const e=$input.first().json||{}; const ex=e.execution||{}; const wf=(e.workflow||{}).name||'print workflow';\nconst ts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date())+' (UK)';\nconst msg=String((ex.error||{}).message||'unknown error').replace(/https?:[^ ]+/g,'[url]').slice(0,500);\nconst node=String(ex.lastNodeExecuted||'unknown node');\nconst mk=t=>({json:{body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:t},associations:[{to:{id:'474434180302'},types:[{associationCategory:'HUBSPOT_DEFINED',associationTypeId:190}]}]}}});\nconst out=[];\nif(/^PRINTER_NOT_READY_WILL_RETRY/.test(msg)) out.push(mk('[START] '+ts+': first gateway check of the day. Print gateway OFFLINE or not ready. n8n checks again every 30 minutes.'));\nout.push(mk('[ALERT] '+ts+': '+msg+' (execution '+String(ex.id||'?')+', node '+node+')'));\nreturn out;"
       },
-      "id": "c4acd79d-3944-420f-8bbc-1e3bce26e8e7",
+      "id": "f8986f24-45b5-4929-8556-c396532d0109",
       "name": "Make alert notes",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -38,7 +38,7 @@
           "timeout": 20000
         }
       },
-      "id": "f44cafce-ad88-49be-a352-aa213875e406",
+      "id": "5cc4620b-e297-412e-8b8f-a1e45bfd731e",
       "name": "Post alert note",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
